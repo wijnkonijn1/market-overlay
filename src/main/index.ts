@@ -11,6 +11,7 @@ import {
   setMainWindow,
   getMainWindow,
   applyDockFromSettings,
+  isDockApplyInProgress,
   syncCryptoStreamFromState,
 } from './ipc';
 import { createTray } from './tray';
@@ -21,7 +22,7 @@ import {
   applyOpacity,
 } from './windowState';
 import { get } from './store';
-import { clearDockReservation } from './dock/workAreaReserve';
+import { clearDockReservation, isApplyingDock } from './dock/workAreaReserve';
 import { IPC } from '../shared/ipc';
 
 if (process.platform === 'linux') {
@@ -65,8 +66,8 @@ function createWindow(): BrowserWindow {
     height: state.height || 560,
     x,
     y,
-    minWidth: 280,
-    minHeight: 200,
+    minWidth: 140,
+    minHeight: 140,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -105,16 +106,26 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  // Re-apply dock after display changes / resize when docked
-  const reapplyDock = () => {
+  // Re-apply dock after display changes when docked.
+  // Skip while we are applying (setBounds would otherwise recurse and can
+  // fight user thickness via stale AppBar re-asserts). Debounce moved/resized
+  // so OS noise does not thrash; always re-apply TO persisted thickness.
+  let reapplyTimer: ReturnType<typeof setTimeout> | null = null;
+  const reapplyDock = (source: string) => {
+    if (isApplyingDock() || isDockApplyInProgress()) return;
     const s = get('settings');
-    if (s?.dockPosition && s.dockPosition !== 'floating') {
+    if (!s?.dockPosition || s.dockPosition === 'floating') return;
+    if (reapplyTimer) clearTimeout(reapplyTimer);
+    reapplyTimer = setTimeout(() => {
+      reapplyTimer = null;
+      if (isApplyingDock() || isDockApplyInProgress()) return;
+      console.debug('[dock] reapply from', source);
       void applyDockFromSettings(win);
-    }
+    }, source === 'display-metrics-changed' ? 50 : 180);
   };
-  win.on('moved', reapplyDock);
-  win.on('resized', reapplyDock);
-  screen.on('display-metrics-changed', reapplyDock);
+  win.on('moved', () => reapplyDock('moved'));
+  win.on('resized', () => reapplyDock('resized'));
+  screen.on('display-metrics-changed', () => reapplyDock('display-metrics-changed'));
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);

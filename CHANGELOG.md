@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.5 — 2026-09-28
+
+### Fixes
+- **Dock thickness no longer auto-grows after shrink** (drag handle or Settings slider):
+  - Persist thickness → `setBounds` to the exact dock rect → register AppBar to that same rect.
+  - After `ABM_QUERYPOS`, force the thickness axis back to the user size (`enforceAppBarUserThickness`); never apply an expanded shell rect.
+  - Deferred ~150ms re-assert only if the OS drifted the window, and only to the **user** thickness (generation counter cancels stale larger re-asserts).
+  - Serialize concurrent `applyDockFromSettings` so in-flight larger applies cannot overwrite a shrink.
+  - Lower Electron minimum size while docked so thickness can reach 140px (was clamped by minWidth 280 / minHeight 200).
+  - Skip `moved`/`resized` re-apply while a dock apply is in progress.
+- Document Windows AppBar ordering in `docs/WINDOWS_APPBAR.md`; add stickiness regression tests.
+
 ## 1.1.4 — 2026-09-28
 
 ### Fixes

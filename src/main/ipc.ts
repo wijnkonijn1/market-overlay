@@ -23,7 +23,7 @@ import {
   getDisplayBoundsForWindow,
 } from './windowState';
 import { rebuildTrayMenu } from './tray';
-import { applyDock, type DockApplyResult } from './dock/workAreaReserve';
+import { applyDock, isApplyingDock, type DockApplyResult } from './dock/workAreaReserve';
 import { cryptoStream } from './market/CryptoStream';
 import { getNextOpenTime } from './market/marketHours';
 import {
@@ -69,17 +69,38 @@ export function syncCryptoStreamFromState(): void {
   cryptoStream.setSymbols(symbols);
 }
 
+/** Monotonic seq so concurrent thickness applies only keep the latest. */
+let dockApplySeq = 0;
+let dockApplyChain: Promise<void> = Promise.resolve();
+
+export function isDockApplyInProgress(): boolean {
+  return isApplyingDock();
+}
+
+/**
+ * Apply dock from persisted settings.
+ * Concurrent calls are serialized; superseded (older) applies are skipped so a
+ * shrink cannot be overwritten by an in-flight larger-thickness AppBar re-assert.
+ */
 export async function applyDockFromSettings(win?: BrowserWindow | null): Promise<void> {
-  const target = win ?? getMainWindow();
-  if (!target || target.isDestroyed()) return;
-  const settings = persist.get('settings');
-  const displayBounds = getDisplayBoundsForWindow(target);
-  const position = settings.dockPosition ?? 'floating';
-  const thickness = settings.dockThickness ?? 420;
-  const reserve = settings.reserveWorkArea !== false && position !== 'floating';
-  const result = await applyDock(target, displayBounds, position, thickness, reserve);
-  lastDockResult = result;
-  console.debug('[dock]', result.detail);
+  const seq = ++dockApplySeq;
+  const run = async () => {
+    if (seq !== dockApplySeq) return; // newer apply already queued
+    const target = win ?? getMainWindow();
+    if (!target || target.isDestroyed()) return;
+    const settings = persist.get('settings');
+    const displayBounds = getDisplayBoundsForWindow(target);
+    const position = settings.dockPosition ?? 'floating';
+    const thickness = settings.dockThickness ?? 420;
+    const reserve = settings.reserveWorkArea !== false && position !== 'floating';
+    const result = await applyDock(target, displayBounds, position, thickness, reserve);
+    if (seq !== dockApplySeq) return; // superseded while applying
+    lastDockResult = result;
+    console.debug('[dock]', result.detail);
+  };
+  const next = dockApplyChain.then(run, run);
+  dockApplyChain = next.catch(() => {});
+  await next;
 }
 
 export function registerIpcHandlers(): void {

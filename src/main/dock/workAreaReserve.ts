@@ -5,6 +5,12 @@
  * Windows: SHAppBarMessage AppBar via koffi (reserves system work area so maximize
  *          stops at the overlay edge). Falls back to edge snap only if FFI unavailable.
  * macOS: edge snap only — third-party apps cannot reserve the system work area.
+ *
+ * Apply order (must stick user thickness — see docs/WINDOWS_APPBAR.md):
+ * 1. Caller persists dockThickness.
+ * 2. Lower Electron min size so thickness can reach MIN_DOCK_THICKNESS.
+ * 3. setBounds to the exact dock rect for that thickness.
+ * 4. Register AppBar / strut to the same rect (Windows never expands past user size).
  */
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -15,15 +21,42 @@ import {
   computeStrutPartial,
   platformDockSupport,
   clampThickness,
+  dockMinimumWindowSize,
   type Rect,
 } from '../../shared/dockBounds';
 import {
   registerWindowsAppBar,
   removeWindowsAppBar,
   isWindowsAppBarRegistered,
+  cancelPendingAppBarReassert,
 } from './windowsAppBar';
 
 const execFileAsync = promisify(execFile);
+
+/** True while applyDock is running or settling setBounds side-effects. */
+let applyingDockDepth = 0;
+let applyingDockClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function isApplyingDock(): boolean {
+  return applyingDockDepth > 0;
+}
+
+function beginApplyingDock(): void {
+  applyingDockDepth += 1;
+  if (applyingDockClearTimer) {
+    clearTimeout(applyingDockClearTimer);
+    applyingDockClearTimer = null;
+  }
+}
+
+function endApplyingDock(): void {
+  // Keep the flag set briefly so Electron 'resized'/'moved' from our setBounds
+  // do not immediately re-enter applyDock and fight the user thickness.
+  applyingDockClearTimer = setTimeout(() => {
+    applyingDockClearTimer = null;
+    applyingDockDepth = Math.max(0, applyingDockDepth - 1);
+  }, 200);
+}
 
 export interface DockApplyResult {
   position: DockPosition;
@@ -128,8 +161,17 @@ function resolveScaleFactor(win: BrowserWindow, displayBounds: Rect): number {
   return 1;
 }
 
+function applyDockMinimumSize(win: BrowserWindow, position: DockPosition): void {
+  if (win.isDestroyed()) return;
+  const { minWidth, minHeight } = dockMinimumWindowSize(position);
+  try {
+    win.setMinimumSize(minWidth, minHeight);
+  } catch { /* best-effort */ }
+}
+
 /**
  * Snap window to dock edge and optionally reserve work area.
+ * Ordering: min size → setBounds(exact user rect) → AppBar/strut for that same rect.
  */
 export async function applyDock(
   win: BrowserWindow,
@@ -138,88 +180,97 @@ export async function applyDock(
   thickness: number,
   reserveWorkArea: boolean
 ): Promise<DockApplyResult> {
-  const support = platformDockSupport();
-  const t = clampThickness(thickness);
-  const bounds = computeDockBounds(displayBounds, position, t);
+  beginApplyingDock();
+  try {
+    // Cancel any deferred AppBar re-assert from a previous (often larger) thickness.
+    cancelPendingAppBarReassert();
 
-  if (bounds) {
-    win.setBounds({
-      x: Math.round(bounds.x),
-      y: Math.round(bounds.y),
-      width: Math.round(bounds.width),
-      height: Math.round(bounds.height),
-    });
-  }
+    const support = platformDockSupport();
+    const t = clampThickness(thickness);
+    applyDockMinimumSize(win, position);
+    const bounds = computeDockBounds(displayBounds, position, t);
 
-  if (position === 'floating' || !reserveWorkArea) {
-    if (process.platform === 'linux') await clearLinuxStrut(win);
-    if (process.platform === 'win32') {
-      const removed = removeWindowsAppBar(win);
+    // Exact user dock rect first — before AppBar — so Electron is not fighting a strut.
+    if (bounds && !win.isDestroyed()) {
+      win.setBounds({
+        x: Math.round(bounds.x),
+        y: Math.round(bounds.y),
+        width: Math.round(bounds.width),
+        height: Math.round(bounds.height),
+      });
+    }
+
+    if (position === 'floating' || !reserveWorkArea) {
+      if (process.platform === 'linux') await clearLinuxStrut(win);
+      if (process.platform === 'win32') {
+        const removed = removeWindowsAppBar(win);
+        return {
+          position,
+          bounds,
+          workAreaReserved: false,
+          platformSupport: support,
+          detail:
+            position === 'floating'
+              ? `undocked (${removed.detail})`
+              : `snap only (reserve off; ${removed.detail})`,
+        };
+      }
       return {
         position,
         bounds,
         workAreaReserved: false,
         platformSupport: support,
-        detail:
-          position === 'floating'
-            ? `undocked (${removed.detail})`
-            : `snap only (reserve off; ${removed.detail})`,
+        detail: position === 'floating' ? 'undocked' : 'snap only (reserve off)',
       };
     }
+
+    if (process.platform === 'linux') {
+      const result = await applyLinuxStrut(win, displayBounds, position, t);
+      return {
+        position,
+        bounds,
+        workAreaReserved: result.ok,
+        platformSupport: support,
+        detail: result.detail,
+      };
+    }
+
+    if (process.platform === 'win32') {
+      const scaleFactor = resolveScaleFactor(win, displayBounds);
+      const result = registerWindowsAppBar(win, displayBounds, position, t, scaleFactor);
+      // approvedRectDip is always the user-thickness rect (never QUERYPOS-expanded)
+      const finalBounds = result.approvedRectDip ?? bounds;
+      return {
+        position,
+        bounds: finalBounds,
+        workAreaReserved: result.ok,
+        platformSupport: support,
+        detail: result.ok
+          ? result.detail
+          : `${result.detail}; edge snap applied without work-area reservation`,
+      };
+    }
+
+    if (process.platform === 'darwin') {
+      return {
+        position,
+        bounds,
+        workAreaReserved: false,
+        platformSupport: support,
+        detail: 'macOS: edge snap only — work-area reservation is not available to third-party apps',
+      };
+    }
+
     return {
       position,
       bounds,
       workAreaReserved: false,
       platformSupport: support,
-      detail: position === 'floating' ? 'undocked' : 'snap only (reserve off)',
+      detail: 'unsupported platform',
     };
+  } finally {
+    endApplyingDock();
   }
-
-  if (process.platform === 'linux') {
-    const result = await applyLinuxStrut(win, displayBounds, position, t);
-    return {
-      position,
-      bounds,
-      workAreaReserved: result.ok,
-      platformSupport: support,
-      detail: result.detail,
-    };
-  }
-
-  if (process.platform === 'win32') {
-    const scaleFactor = resolveScaleFactor(win, displayBounds);
-    const result = registerWindowsAppBar(win, displayBounds, position, t, scaleFactor);
-    // If AppBar adjusted the rect, prefer those bounds for the result
-    // (setBounds already applied inside registerWindowsAppBar)
-    const finalBounds = result.approvedRectDip ?? bounds;
-    return {
-      position,
-      bounds: finalBounds,
-      workAreaReserved: result.ok,
-      platformSupport: support,
-      detail: result.ok
-        ? result.detail
-        : `${result.detail}; edge snap applied without work-area reservation`,
-    };
-  }
-
-  if (process.platform === 'darwin') {
-    return {
-      position,
-      bounds,
-      workAreaReserved: false,
-      platformSupport: support,
-      detail: 'macOS: edge snap only — work-area reservation is not available to third-party apps',
-    };
-  }
-
-  return {
-    position,
-    bounds,
-    workAreaReserved: false,
-    platformSupport: support,
-    detail: 'unsupported platform',
-  };
 }
 
 export async function clearDockReservation(win?: BrowserWindow | null): Promise<void> {

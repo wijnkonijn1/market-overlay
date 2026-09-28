@@ -25,7 +25,6 @@ function edgeClass(position: DockPosition): string {
 export function DockResizeHandle() {
   const position = useAppStore((s) => s.settings.dockPosition);
   const thickness = useAppStore((s) => s.settings.dockThickness);
-  const patchThickness = useAppStore((s) => s.updateSettings);
   const dragging = useRef(false);
   const startRef = useRef({ axis: 0, thickness: 0 });
   const lastApplied = useRef(0);
@@ -95,10 +94,11 @@ export function DockResizeHandle() {
       } catch {
         /* already released */
       }
-      const t = useAppStore.getState().settings.dockThickness;
-      patchThickness({ dockThickness: t });
+      // Thickness already applied via setDockThickness during drag; only persist
+      // settings here so we do not race a second applyDock with a stale size.
+      void useAppStore.getState().persist();
     },
-    [patchThickness, flush]
+    [flush]
   );
 
   if (position === 'floating') return null;

@@ -103,4 +103,18 @@ describe('dockBounds', () => {
     expect(dock.dockRowDensity('top', 180)).toBe('compact');
     expect(dock.dockRowDensity('bottom', 300)).toBe('medium');
   });
+
+  it('enforceAppBarUserThickness pins left strip after inflate', () => {
+    const inflated = { left: 0, top: 0, right: 800, bottom: 1080 };
+    const rc = dock.enforceAppBarUserThickness(inflated, 'left', 200, 1, display);
+    expect(rc.right - rc.left).toBe(200);
+    expect(rc.left).toBe(0);
+  });
+
+  it('dockMinimumWindowSize and boundsMatchDockThickness', () => {
+    expect(dock.dockMinimumWindowSize('right').minWidth).toBe(dock.MIN_DOCK_THICKNESS);
+    const b = dock.computeDockBounds(display, 'top', 180)!;
+    expect(dock.boundsMatchDockThickness(b, 'top', 180, display)).toBe(true);
+  });
+
 });

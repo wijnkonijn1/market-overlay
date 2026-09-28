@@ -5,13 +5,24 @@
  * registered AppBars and ignores SPI). AppBar registration is the supported path.
  *
  * Uses koffi for FFI. On process exit / HWND destroy, the shell removes the AppBar.
+ *
+ * Thickness policy (v1.1.5+):
+ * 1. Persist user thickness first (caller).
+ * 2. Set Electron bounds to the exact dock rect for that thickness.
+ * 3. Register AppBar to the same rect; after ABM_QUERYPOS, force the thickness
+ *    axis back to the user size (never expand past the user's choice).
+ * 4. Deferred re-assert (~150ms) only if the OS moved the window incorrectly,
+ *    and always re-asserts TO the user thickness — never a larger default.
+ *    A generation counter cancels stale re-asserts from superseded resizes.
  */
 import type { BrowserWindow } from 'electron';
 import type { DockPosition } from '../../shared/types';
 import {
-  computeAppBarPhysicalRect,
+  boundsMatchDockThickness,
+  computeDockBounds,
+  clampThickness,
   dockPositionToAppBarEdge,
-  physicalRectToDip,
+  enforceAppBarUserThickness,
   type WinRect,
 } from '../../shared/dockBounds';
 
@@ -44,6 +55,8 @@ interface AppBarDataJs {
 let api: AppBarApi | null | undefined; // undefined = not tried, null = failed
 let registeredHwnd: number | bigint | null = null;
 let reassertTimer: ReturnType<typeof setTimeout> | null = null;
+/** Bumped on every register/remove so deferred re-asserts from older sizes are no-ops. */
+let applyGeneration = 0;
 
 function loadApi(): AppBarApi | null {
   if (api !== undefined) return api;
@@ -111,6 +124,12 @@ function clearReassertTimer(): void {
   }
 }
 
+/** Cancel any pending deferred bounds re-assert (e.g. before a newer thickness apply). */
+export function cancelPendingAppBarReassert(): void {
+  applyGeneration += 1;
+  clearReassertTimer();
+}
+
 function makeData(
   hwnd: number | bigint,
   edge: number,
@@ -127,10 +146,30 @@ function makeData(
   };
 }
 
+function applyUserDockBounds(
+  win: BrowserWindow,
+  intendedDip: { x: number; y: number; width: number; height: number },
+  position: DockPosition,
+  thicknessDip: number,
+  displayBoundsDip: { x: number; y: number; width: number; height: number }
+): void {
+  if (win.isDestroyed()) return;
+  const current = win.getBounds();
+  if (boundsMatchDockThickness(current, position, thicknessDip, displayBoundsDip)) {
+    return;
+  }
+  win.setBounds({
+    x: Math.round(intendedDip.x),
+    y: Math.round(intendedDip.y),
+    width: Math.max(1, Math.round(intendedDip.width)),
+    height: Math.max(1, Math.round(intendedDip.height)),
+  });
+}
+
 /**
  * Register or update an AppBar for the overlay window.
- * After SETPOS, re-asserts window bounds (immediate + deferred) to counter
- * Explorer briefly pushing our HWND out of the reserved strip.
+ * After SETPOS, re-asserts window bounds only if the OS drifted us away from
+ * the user-chosen thickness (immediate check + one deferred ~150ms pass).
  */
 export function registerWindowsAppBar(
   win: BrowserWindow,
@@ -152,15 +191,24 @@ export function registerWindowsAppBar(
     return { ok: false, detail: 'no HWND' };
   }
 
-  const physical = computeAppBarPhysicalRect(
-    displayBoundsDip,
-    position,
-    thicknessDip,
-    scaleFactor
-  );
-  if (!physical) {
-    return { ok: false, detail: 'could not compute AppBar rect' };
+  const thickness = clampThickness(thicknessDip);
+  const intendedDip = computeDockBounds(displayBoundsDip, position, thickness);
+  if (!intendedDip) {
+    return { ok: false, detail: 'could not compute dock bounds' };
   }
+
+  // Always pin AppBar rect to user thickness (do not trust QUERYPOS to keep size).
+  const physical = enforceAppBarUserThickness(
+    { left: 0, top: 0, right: 0, bottom: 0 },
+    position,
+    thickness,
+    scaleFactor,
+    displayBoundsDip
+  );
+
+  // New apply supersedes any pending re-assert from a previous (often larger) size.
+  const gen = ++applyGeneration;
+  clearReassertTimer();
 
   try {
     // If a different HWND was registered (shouldn't happen), remove it first.
@@ -185,36 +233,35 @@ export function registerWindowsAppBar(
 
     const data = makeData(hwnd, edge, physical, lib.sizeofAppBarData);
     lib.SHAppBarMessage(ABM_QUERYPOS, data);
+    // Shell may have adjusted rc — restore user thickness before SETPOS.
+    data.rc = enforceAppBarUserThickness(
+      data.rc,
+      position,
+      thickness,
+      scaleFactor,
+      displayBoundsDip
+    );
     lib.SHAppBarMessage(ABM_SETPOS, data);
     // Notify shell that our window position settled
     try {
       lib.SHAppBarMessage(ABM_WINDOWPOSCHANGED, makeData(hwnd, edge, data.rc, lib.sizeofAppBarData));
     } catch { /* optional */ }
 
-    const approvedDip = physicalRectToDip(data.rc, scaleFactor);
-    const applyBounds = () => {
-      if (win.isDestroyed()) return;
-      win.setBounds({
-        x: Math.round(approvedDip.x),
-        y: Math.round(approvedDip.y),
-        width: Math.max(1, Math.round(approvedDip.width)),
-        height: Math.max(1, Math.round(approvedDip.height)),
-      });
-    };
-    applyBounds();
+    // Electron bounds must match the user strip — never a QUERYPOS-expanded rect.
+    applyUserDockBounds(win, intendedDip, position, thickness, displayBoundsDip);
 
-    // Explorer may asynchronously push our window out of the reserved strip once;
-    // a single deferred re-assert (~150ms) holds for AppBar dock windows.
-    clearReassertTimer();
+    // Explorer may asynchronously push our HWND once; re-assert only if drifted,
+    // and only for this generation (stale larger sizes must not snap back).
     reassertTimer = setTimeout(() => {
       reassertTimer = null;
-      applyBounds();
+      if (gen !== applyGeneration) return;
+      applyUserDockBounds(win, intendedDip, position, thickness, displayBoundsDip);
     }, 150);
 
     return {
       ok: true,
-      detail: `AppBar registered edge=${edge} hwnd=${String(hwnd)} rc=${JSON.stringify(data.rc)}`,
-      approvedRectDip: approvedDip,
+      detail: `AppBar registered edge=${edge} hwnd=${String(hwnd)} rc=${JSON.stringify(data.rc)} thicknessDip=${thickness}`,
+      approvedRectDip: intendedDip,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -227,7 +274,7 @@ export function registerWindowsAppBar(
  * Unregister the AppBar so the system work area is restored.
  */
 export function removeWindowsAppBar(win?: BrowserWindow | null): WindowsAppBarResult {
-  clearReassertTimer();
+  cancelPendingAppBarReassert();
   const lib = loadApi();
   if (!lib) {
     registeredHwnd = null;
@@ -269,4 +316,5 @@ export function _resetWindowsAppBarStateForTests(): void {
   clearReassertTimer();
   registeredHwnd = null;
   api = undefined;
+  applyGeneration = 0;
 }

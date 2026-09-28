@@ -246,6 +246,95 @@ export function computeAppBarPhysicalRect(
   return dipRectToPhysical(bounds, scaleFactor);
 }
 
+
+/**
+ * After ABM_QUERYPOS the shell may adjust the proposed RECT. Force the thickness
+ * axis back to the user-chosen size (never expand past it). Keeps the dock
+ * pinned to the display edge; the free/inner edge moves.
+ *
+ * Physical pixels. `thicknessDip` is the user setting in Electron DIP units.
+ */
+export function enforceAppBarUserThickness(
+  rc: WinRect,
+  position: DockPosition,
+  thicknessDip: number,
+  scaleFactor: number,
+  displayBoundsDip: Rect
+): WinRect {
+  if (position === 'floating') return { ...rc };
+  const s = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  const tPhys = Math.round(clampThickness(thicknessDip) * s);
+  const display = dipRectToPhysical(displayBoundsDip, scaleFactor);
+  switch (position) {
+    case 'left':
+      return {
+        left: display.left,
+        top: display.top,
+        right: display.left + tPhys,
+        bottom: display.bottom,
+      };
+    case 'right':
+      return {
+        left: display.right - tPhys,
+        top: display.top,
+        right: display.right,
+        bottom: display.bottom,
+      };
+    case 'top':
+      return {
+        left: display.left,
+        top: display.top,
+        right: display.right,
+        bottom: display.top + tPhys,
+      };
+    case 'bottom':
+      return {
+        left: display.left,
+        top: display.bottom - tPhys,
+        right: display.right,
+        bottom: display.bottom,
+      };
+    default:
+      return { ...rc };
+  }
+}
+
+/**
+ * True when window bounds already match the dock strip for position+thickness
+ * (within 1px rounding tolerance). Used to skip no-op setBounds / re-asserts.
+ */
+export function boundsMatchDockThickness(
+  bounds: Rect,
+  position: DockPosition,
+  thickness: number,
+  displayBounds: Rect
+): boolean {
+  const expected = computeDockBounds(displayBounds, position, thickness);
+  if (!expected) return false;
+  return (
+    Math.abs(bounds.x - expected.x) <= 1 &&
+    Math.abs(bounds.y - expected.y) <= 1 &&
+    Math.abs(bounds.width - expected.width) <= 1 &&
+    Math.abs(bounds.height - expected.height) <= 1
+  );
+}
+
+/**
+ * Electron BrowserWindow minimum size while docked so thickness can reach
+ * MIN_DOCK_THICKNESS. Floating keeps a more comfortable default.
+ */
+export function dockMinimumWindowSize(
+  position: DockPosition
+): { minWidth: number; minHeight: number } {
+  if (position === 'left' || position === 'right') {
+    return { minWidth: MIN_DOCK_THICKNESS, minHeight: 1 };
+  }
+  if (position === 'top' || position === 'bottom') {
+    return { minWidth: 1, minHeight: MIN_DOCK_THICKNESS };
+  }
+  return { minWidth: 280, minHeight: 200 };
+}
+
 /**
  * Shrink a work-area rect by the dock strip on the given edge (pure geometry).
  * Useful for tests and for documenting expected maximize behavior.
