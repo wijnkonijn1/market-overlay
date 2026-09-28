@@ -1,4 +1,4 @@
-# Market Overlay v1.1.3
+# Market Overlay v1.1.4
 
 Desktop always-on-top market data overlay for stocks, ETFs, indices, and crypto.
 
@@ -14,6 +14,7 @@ npm run dev            # Vite + Electron
 npm test
 npm run build
 npm run dist:linux     # → release/ AppImage + deb (+ dir fallback)
+npm run dist:win       # → release/ NSIS Setup + Portable (verifies ffmpeg.dll)
 ```
 
 ## v1.1 highlights

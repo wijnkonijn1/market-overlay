@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.4 — 2026-09-28
+
+### Fixes
+- **Windows missing `ffmpeg.dll` on launch** (“De code-uitvoering kan niet worden voortgezet omdat ffmpeg.dll niet is gevonden”):
+  - Pack NSIS/portable app archives with `ELECTRON_BUILDER_7Z_FILTER=BCJ` so install-time Nsis7z reliably extracts PE files (`MarketOverlay.exe`, `ffmpeg.dll`, and other Chromium DLLs) instead of BCJ2 streams that some Nsis7z builds skip.
+  - Set `win.executableName` to `MarketOverlay` (no spaces) while keeping display `productName` “Market Overlay”.
+  - Add `afterPack` + `verify:win-dlls` gate that fails the Windows build if `ffmpeg.dll` (and sibling Electron DLLs) are missing from `release/win-unpacked/`.
+
 ## 1.1.3 — 2026-09-28
 
 ### Features
