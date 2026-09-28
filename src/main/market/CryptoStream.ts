@@ -119,7 +119,8 @@ export class CryptoStream {
     const same =
       crypto.length === this.yahooSymbols.length &&
       crypto.every((s, i) => s === this.yahooSymbols[i]);
-    if (same && this.ws && this.connected) return;
+    // Reuse an in-flight or open socket for the same symbol set (avoids CONNECTING close crash).
+    if (same && this.ws) return;
 
     this.yahooSymbols = crypto;
     this.streamToYahoo.clear();
@@ -148,14 +149,30 @@ export class CryptoStream {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    if (this.ws) {
-      try {
-        this.ws.removeAllListeners();
-        this.ws.close();
-      } catch { /* ignore */ }
-      this.ws = null;
-    }
+    const socket = this.ws;
+    this.ws = null;
     this.connected = false;
+    if (socket) {
+      // Swallow errors emitted by abortHandshake when closing a CONNECTING socket.
+      // Calling removeAllListeners() then close() otherwise becomes an uncaughtException
+      // ("WebSocket was closed before the connection was established").
+      socket.removeAllListeners('open');
+      socket.removeAllListeners('message');
+      socket.removeAllListeners('close');
+      socket.removeAllListeners('unexpected-response');
+      socket.on('error', () => {});
+      try {
+        if (socket.readyState === WebSocket.CONNECTING) {
+          socket.terminate();
+        } else if (socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        } else {
+          socket.terminate();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     this.intentionalClose = false;
   }
 
