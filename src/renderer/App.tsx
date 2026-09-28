@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useCallback } from 'react';
 import { useAppStore } from './store/appStore';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AddTickerModal } from './components/AddTickerModal';
+import { DockResizeHandle } from './components/DockResizeHandle';
 import { formatPrice, formatChange } from './utils/format';
 import { refreshQuotes, scheduleRefresh } from './services/marketService';
+import { dockRowDensity } from '../shared/dockBounds';
 
 export function App() {
   const hydrated = useAppStore((s) => s.hydrated);
@@ -25,6 +27,15 @@ export function App() {
   const applyQuotePartial = useAppStore((s) => s.applyQuotePartial);
   const setCryptoStream = useAppStore((s) => s.setCryptoStream);
   const active = useAppStore((s) => s.activeWatchlist());
+
+  const density = useMemo(
+    () => dockRowDensity(settings.dockPosition, settings.dockThickness),
+    [settings.dockPosition, settings.dockThickness]
+  );
+  const isCompact = density === 'compact';
+  // compact: symbol + price only; medium: + change %; full: + name (unless layout=compact)
+  const showChange = density !== 'compact';
+  const showName = density === 'full' && settings.layout !== 'compact';
 
   useEffect(() => {
     const api = window.marketOverlay;
@@ -108,11 +119,20 @@ export function App() {
     return <div className="app"><div className="empty">Loading…</div></div>;
   }
 
+  const rowClass =
+    density === 'compact' ? 'row row-compact' : density === 'medium' ? 'row row-medium' : 'row';
+
   return (
-    <div className="app" style={{ fontSize: settings.fontSize }}>
+    <div
+      className={`app density-${density}`}
+      style={{ fontSize: settings.fontSize }}
+      data-dock={settings.dockPosition}
+      data-density={density}
+    >
+      <DockResizeHandle />
       <div className="titlebar">
         <span>Market Overlay</span>
-        <span className="badge">v1.1.0</span>
+        <span className="badge">v1.1.3</span>
         <div className="win-btns no-drag">
           <button type="button" className="icon-btn" title="Add (Ctrl+K)" onClick={() => setPanel('add')}>+</button>
           <button type="button" className="icon-btn" title="Refresh" onClick={onRefresh}>{refreshing ? '…' : '↻'}</button>
@@ -122,33 +142,37 @@ export function App() {
         </div>
       </div>
 
-      <div className="status-bar">
-        <span className={`dot ${marketLabel.state.toLowerCase()}`} />
-        <span>{marketLabel.label}</span>
-        {marketLabel.next && <span title={marketLabel.next}>· {marketLabel.next}</span>}
-        {settings.cryptoStreaming && (
-          <span className={cryptoStream.connected ? 'stream-on' : ''} title="Crypto stream">
-            · WS {cryptoStream.connected ? 'live' : 'off'}
+      {!isCompact && (
+        <div className="status-bar">
+          <span className={`dot ${marketLabel.state.toLowerCase()}`} />
+          <span>{marketLabel.label}</span>
+          {marketLabel.next && <span title={marketLabel.next}>· {marketLabel.next}</span>}
+          {settings.cryptoStreaming && (
+            <span className={cryptoStream.connected ? 'stream-on' : ''} title="Crypto stream">
+              · WS {cryptoStream.connected ? 'live' : 'off'}
+            </span>
+          )}
+          {dataUnavailable && <span>· Data unavailable</span>}
+          <span style={{ marginLeft: 'auto' }}>
+            {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '—'}
           </span>
-        )}
-        {dataUnavailable && <span>· Data unavailable</span>}
-        <span style={{ marginLeft: 'auto' }}>
-          {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '—'}
-        </span>
-      </div>
+        </div>
+      )}
 
-      <div className="tabs no-drag">
-        {watchlists.map((w) => (
-          <button
-            key={w.id}
-            type="button"
-            className={`tab ${w.id === activeWatchlistId ? 'active' : ''}`}
-            onClick={() => setActiveWatchlist(w.id)}
-          >
-            {w.name}
-          </button>
-        ))}
-      </div>
+      {!isCompact && (
+        <div className="tabs no-drag">
+          {watchlists.map((w) => (
+            <button
+              key={w.id}
+              type="button"
+              className={`tab ${w.id === activeWatchlistId ? 'active' : ''}`}
+              onClick={() => setActiveWatchlist(w.id)}
+            >
+              {w.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="list">
         {!active?.tickers.length && (
@@ -162,21 +186,23 @@ export function App() {
           return (
             <div
               key={t.symbol}
-              className="row"
+              className={rowClass}
               onClick={() => setSelectedSymbol(t.symbol)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 removeTicker(t.symbol);
               }}
             >
-              <div>
+              <div className="sym-block">
                 <div className="sym">{t.displaySymbol}</div>
-                <div className="name">{q?.name || t.name || t.symbol}</div>
+                {showName && <div className="name">{q?.name || t.name || t.symbol}</div>}
               </div>
               <div className="price">{q ? formatPrice(q.price, q.currency) : '—'}</div>
-              <div className={`chg ${up ? 'up' : 'down'}`}>
-                {q ? formatChange(q.change, q.changePercent) : '—'}
-              </div>
+              {showChange && (
+                <div className={`chg ${up ? 'up' : 'down'}`}>
+                  {q ? formatChange(q.change, q.changePercent) : '—'}
+                </div>
+              )}
             </div>
           );
         })}

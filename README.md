@@ -1,4 +1,4 @@
-# Market Overlay v1.1.2
+# Market Overlay v1.1.3
 
 Desktop always-on-top market data overlay for stocks, ETFs, indices, and crypto.
 
@@ -32,6 +32,8 @@ npm run dist:linux     # → release/ AppImage + deb (+ dir fallback)
 | **Linux/Wayland** | Best-effort snap | Struts often unavailable (compositor-dependent) |
 | **Windows** | Yes | Yes — `SHAppBarMessage` AppBar via koffi when “Reserve screen space” is on (restored on undock/quit) |
 | **macOS** | Yes | **Not available** to third-party apps — Settings still offer the toggle but reservation is a no-op |
+
+Dock thickness (Settings slider or drag the inner edge) is 140–720px. Below 260px the strip auto-compacts to ticker + price only; work-area reservation updates with thickness.
 
 ## Sharing builds
 - **Linux:** run the AppImage or install the `.deb` from `release/`  

@@ -5,8 +5,9 @@ const display = { x: 0, y: 0, width: 1920, height: 1080 };
 
 describe('dockBounds', () => {
   it('clamps thickness', () => {
-    expect(dock.clampThickness(50)).toBeGreaterThanOrEqual(200);
-    expect(dock.clampThickness(9999)).toBeLessThanOrEqual(800);
+    expect(dock.clampThickness(50)).toBe(dock.MIN_DOCK_THICKNESS);
+    expect(dock.clampThickness(9999)).toBe(dock.MAX_DOCK_THICKNESS);
+    expect(dock.clampThickness(420)).toBe(420);
   });
 
   it('left/right strips', () => {
@@ -30,6 +31,7 @@ describe('dockBounds', () => {
 
   it('thicknessFromBounds', () => {
     expect(dock.thicknessFromBounds('left', { x: 0, y: 0, width: 400, height: 1080 })).toBe(400);
+    expect(dock.thicknessFromBounds('top', { x: 0, y: 0, width: 1920, height: 200 })).toBe(200);
   });
 
   it('strut partial', () => {
@@ -83,4 +85,22 @@ describe('dockBounds', () => {
     expect(dock.computeReservedWorkArea(wa, 'floating', 420)).toBeNull();
   });
 
+  it('dockRowDensity: floating always full', () => {
+    expect(dock.dockRowDensity('floating', 140)).toBe('full');
+    expect(dock.dockRowDensity('floating', 500)).toBe('full');
+  });
+
+  it('dockRowDensity: compact / medium / full by thickness', () => {
+    expect(dock.dockRowDensity('left', 140)).toBe('compact');
+    expect(dock.dockRowDensity('left', dock.COMPACT_DOCK_THRESHOLD - 1)).toBe('compact');
+    expect(dock.dockRowDensity('right', dock.COMPACT_DOCK_THRESHOLD)).toBe('medium');
+    expect(dock.dockRowDensity('top', dock.MEDIUM_DOCK_THRESHOLD - 1)).toBe('medium');
+    expect(dock.dockRowDensity('bottom', dock.MEDIUM_DOCK_THRESHOLD)).toBe('full');
+    expect(dock.dockRowDensity('left', 420)).toBe('full');
+  });
+
+  it('dockRowDensity uses same thresholds for horizontal and vertical docks', () => {
+    expect(dock.dockRowDensity('top', 180)).toBe('compact');
+    expect(dock.dockRowDensity('bottom', 300)).toBe('medium');
+  });
 });

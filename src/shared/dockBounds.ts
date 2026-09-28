@@ -10,13 +10,43 @@ export interface Rect {
   height: number;
 }
 
-export const MIN_DOCK_THICKNESS = 200;
-export const MAX_DOCK_THICKNESS = 800;
+/** Minimum strip size (px) — enough for symbol + price in compact mode */
+export const MIN_DOCK_THICKNESS = 140;
+/** Maximum strip size (px) */
+export const MAX_DOCK_THICKNESS = 720;
 export const DEFAULT_DOCK_THICKNESS = 420;
+
+/**
+ * Below this thickness (width for L/R, height for T/B), rows show symbol + price only.
+ */
+export const COMPACT_DOCK_THRESHOLD = 260;
+/**
+ * Below this (and ≥ compact threshold), rows show symbol + price + change (no name/meta).
+ */
+export const MEDIUM_DOCK_THRESHOLD = 340;
+
+export type DockRowDensity = 'compact' | 'medium' | 'full';
 
 export function clampThickness(thickness: number): number {
   if (!Number.isFinite(thickness)) return DEFAULT_DOCK_THICKNESS;
   return Math.min(MAX_DOCK_THICKNESS, Math.max(MIN_DOCK_THICKNESS, Math.round(thickness)));
+}
+
+/**
+ * Row density for a docked strip based on thickness.
+ * Floating mode always uses full density (window can be resized freely).
+ * Vertical dock (left/right) uses width; horizontal (top/bottom) uses height —
+ * both are passed as `thickness`.
+ */
+export function dockRowDensity(
+  position: DockPosition,
+  thickness: number
+): DockRowDensity {
+  if (position === 'floating') return 'full';
+  const t = clampThickness(thickness);
+  if (t < COMPACT_DOCK_THRESHOLD) return 'compact';
+  if (t < MEDIUM_DOCK_THRESHOLD) return 'medium';
+  return 'full';
 }
 
 /**

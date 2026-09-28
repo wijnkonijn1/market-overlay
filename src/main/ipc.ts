@@ -34,7 +34,7 @@ import {
   applyWatchlistImport,
 } from '../shared/watchlistIO';
 import { isCryptoSymbol } from '../shared/cryptoMap';
-import { thicknessFromBounds, platformDockSupport } from '../shared/dockBounds';
+import { thicknessFromBounds, platformDockSupport, clampThickness } from '../shared/dockBounds';
 
 let mainWindowRef: BrowserWindow | null = null;
 let lastDockResult: DockApplyResult | null = null;
@@ -232,6 +232,13 @@ export function registerIpcHandlers(): void {
     persist.set('settings', settings);
     await applyDockFromSettings();
     return settings;
+  });
+  ipcMain.handle(IPC.DOCK_SET_THICKNESS, async (_e, thickness: number) => {
+    const t = clampThickness(Number(thickness));
+    const settings = { ...persist.get('settings'), dockThickness: t };
+    persist.set('settings', settings);
+    await applyDockFromSettings();
+    return t;
   });
 
   ipcMain.handle(IPC.WATCHLIST_EXPORT, async (e, format: WatchlistExportFormat) => {

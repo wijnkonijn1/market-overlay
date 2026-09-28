@@ -55,6 +55,8 @@ const api = {
   setDock: (position: DockPosition) => ipcRenderer.invoke(IPC.DOCK_SET, position),
   getDock: () => ipcRenderer.invoke(IPC.DOCK_GET) as Promise<DockState>,
   setDockReserve: (reserve: boolean) => ipcRenderer.invoke(IPC.DOCK_RESERVE, reserve),
+  setDockThickness: (thickness: number) =>
+    ipcRenderer.invoke(IPC.DOCK_SET_THICKNESS, thickness) as Promise<number>,
 
   onShortcut: (cb: (action: ShortcutAction) => void) => {
     const handler = (_: Electron.IpcRendererEvent, action: ShortcutAction) => cb(action);

@@ -1,6 +1,11 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
 import type { RefreshInterval, Theme, LayoutMode, DisplayCurrency, DockPosition } from '../../shared/types';
+import {
+  MIN_DOCK_THICKNESS,
+  MAX_DOCK_THICKNESS,
+  COMPACT_DOCK_THRESHOLD,
+} from '../../shared/dockBounds';
 import { refreshLabel } from '../utils/format';
 import { scheduleRefresh } from '../services/marketService';
 
@@ -117,6 +122,24 @@ export function SettingsPanel() {
         When enabled and docked, other windows maximize only up to the overlay edge
         (system work area shrinks like a taskbar). Linux/X11: EWMH struts. Windows: AppBar
         (SHAppBarMessage). macOS: edge snap only — OS does not allow third-party reservation.
+      </p>
+
+      <label className="setting">
+        <span>Dock thickness ({settings.dockThickness}px)</span>
+        <input
+          type="range"
+          min={MIN_DOCK_THICKNESS}
+          max={MAX_DOCK_THICKNESS}
+          step={10}
+          value={settings.dockThickness}
+          disabled={settings.dockPosition === 'floating'}
+          onChange={(e) => update({ dockThickness: Number(e.target.value) })}
+        />
+      </label>
+      <p className="hint">
+        Width when docked left/right, height when top/bottom. Drag the inner edge of the
+        docked window to resize. Below {COMPACT_DOCK_THRESHOLD}px only ticker + price are shown.
+        Disabled while floating.
       </p>
 
       <h4 style={{ margin: '12px 0 6px', fontSize: 12 }}>Crypto</h4>

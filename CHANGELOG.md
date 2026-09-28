@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3 — 2026-09-28
+
+### Features
+- **Resizable dock thickness**: Settings slider (140–720px) plus drag handle on the free/inner edge of a docked window. Persists `dockThickness` and re-applies Linux strut / Windows AppBar so the reserved work area tracks the new size.
+- **Auto compact rows**: when docked strip is narrower than 260px (L/R width or T/B height), rows show **symbol + price only**; 260–339px is medium (symbol + price + change); ≥340px is full (name + change). Floating mode stays full density.
+
 ## 1.1.2 — 2026-09-28
 
 ### Fixes

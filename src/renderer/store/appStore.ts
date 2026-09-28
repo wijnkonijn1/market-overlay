@@ -170,6 +170,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (partial.startWithOS != null) void api?.setLoginItem(next.startWithOS);
     if (partial.dockPosition != null) void api?.setDock(next.dockPosition);
     if (partial.reserveWorkArea != null) void api?.setDockReserve(next.reserveWorkArea);
+    if (partial.dockThickness != null) void api?.setDockThickness?.(next.dockThickness);
   },
 
   setQuotes: (quotes, opts) => {

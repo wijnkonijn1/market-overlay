@@ -36,6 +36,7 @@ export const IPC = {
   DOCK_SET: 'dock:set',
   DOCK_GET: 'dock:get',
   DOCK_RESERVE: 'dock:reserve',
+  DOCK_SET_THICKNESS: 'dock:setThickness',
 
   EVENT_SHORTCUT: 'event:shortcut',
   EVENT_TRAY_ACTION: 'event:trayAction',
