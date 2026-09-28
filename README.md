@@ -1,4 +1,4 @@
-# Market Overlay v1.1.0
+# Market Overlay v1.1.2
 
 Desktop always-on-top market data overlay for stocks, ETFs, indices, and crypto.
 
@@ -30,7 +30,7 @@ npm run dist:linux     # → release/ AppImage + deb (+ dir fallback)
 |----|-----------|-------------------|
 | **Linux/X11** | Yes | Yes — EWMH `_NET_WM_STRUT` / `_NET_WM_STRUT_PARTIAL` via `xprop` when “Reserve screen space” is on |
 | **Linux/Wayland** | Best-effort snap | Struts often unavailable (compositor-dependent) |
-| **Windows** | Yes | Best-effort AppBar; otherwise snap only |
+| **Windows** | Yes | Yes — `SHAppBarMessage` AppBar via koffi when “Reserve screen space” is on (restored on undock/quit) |
 | **macOS** | Yes | **Not available** to third-party apps — Settings still offer the toggle but reservation is a no-op |
 
 ## Sharing builds

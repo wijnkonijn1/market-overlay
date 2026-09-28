@@ -105,7 +105,7 @@ export function SettingsPanel() {
         </select>
       </label>
       <label className="setting row">
-        <span>Reserve screen space</span>
+        <span>Reserve screen space (maximize stops at overlay)</span>
         <input
           type="checkbox"
           checked={settings.reserveWorkArea}
@@ -114,8 +114,9 @@ export function SettingsPanel() {
         />
       </label>
       <p className="hint">
-        Linux/X11: EWMH struts shrink the usable work area. Windows: edge snap (AppBar best-effort).
-        macOS: edge snap only — OS does not allow third-party work-area reservation.
+        When enabled and docked, other windows maximize only up to the overlay edge
+        (system work area shrinks like a taskbar). Linux/X11: EWMH struts. Windows: AppBar
+        (SHAppBarMessage). macOS: edge snap only — OS does not allow third-party reservation.
       </p>
 
       <h4 style={{ margin: '12px 0 6px', fontSize: 12 }}>Crypto</h4>

@@ -2,12 +2,13 @@
  * Platform work-area reservation when the overlay is docked.
  *
  * Linux/X11: EWMH _NET_WM_STRUT / _NET_WM_STRUT_PARTIAL via `xprop` (best-effort).
- * Windows: dock positioning always; AppBar reservation attempted via optional koffi (may be unavailable).
+ * Windows: SHAppBarMessage AppBar via koffi (reserves system work area so maximize
+ *          stops at the overlay edge). Falls back to edge snap only if FFI unavailable.
  * macOS: edge snap only — third-party apps cannot reserve the system work area.
  */
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { BrowserWindow } from 'electron';
+import { screen, type BrowserWindow } from 'electron';
 import type { DockPosition } from '../../shared/types';
 import {
   computeDockBounds,
@@ -16,6 +17,11 @@ import {
   clampThickness,
   type Rect,
 } from '../../shared/dockBounds';
+import {
+  registerWindowsAppBar,
+  removeWindowsAppBar,
+  isWindowsAppBarRegistered,
+} from './windowsAppBar';
 
 const execFileAsync = promisify(execFile);
 
@@ -106,6 +112,22 @@ async function applyLinuxStrut(
   }
 }
 
+function resolveScaleFactor(win: BrowserWindow, displayBounds: Rect): number {
+  try {
+    const display = screen.getDisplayMatching({
+      x: displayBounds.x,
+      y: displayBounds.y,
+      width: displayBounds.width,
+      height: displayBounds.height,
+    });
+    if (display?.scaleFactor) return display.scaleFactor;
+    if (!win.isDestroyed()) {
+      return screen.getDisplayMatching(win.getBounds()).scaleFactor || 1;
+    }
+  } catch { /* fall through */ }
+  return 1;
+}
+
 /**
  * Snap window to dock edge and optionally reserve work area.
  */
@@ -131,6 +153,19 @@ export async function applyDock(
 
   if (position === 'floating' || !reserveWorkArea) {
     if (process.platform === 'linux') await clearLinuxStrut(win);
+    if (process.platform === 'win32') {
+      const removed = removeWindowsAppBar(win);
+      return {
+        position,
+        bounds,
+        workAreaReserved: false,
+        platformSupport: support,
+        detail:
+          position === 'floating'
+            ? `undocked (${removed.detail})`
+            : `snap only (reserve off; ${removed.detail})`,
+      };
+    }
     return {
       position,
       bounds,
@@ -152,14 +187,19 @@ export async function applyDock(
   }
 
   if (process.platform === 'win32') {
-    // Positioning done above. True AppBar reservation needs SHAppBarMessage (FFI).
-    // Documented as follow-up when koffi/ffi is available in the build environment.
+    const scaleFactor = resolveScaleFactor(win, displayBounds);
+    const result = registerWindowsAppBar(win, displayBounds, position, t, scaleFactor);
+    // If AppBar adjusted the rect, prefer those bounds for the result
+    // (setBounds already applied inside registerWindowsAppBar)
+    const finalBounds = result.approvedRectDip ?? bounds;
     return {
       position,
-      bounds,
-      workAreaReserved: false,
+      bounds: finalBounds,
+      workAreaReserved: result.ok,
       platformSupport: support,
-      detail: 'Windows: edge snap applied; AppBar reservation not available in this build',
+      detail: result.ok
+        ? result.detail
+        : `${result.detail}; edge snap applied without work-area reservation`,
     };
   }
 
@@ -182,6 +222,13 @@ export async function applyDock(
   };
 }
 
-export async function clearDockReservation(win: BrowserWindow): Promise<void> {
-  if (process.platform === 'linux') await clearLinuxStrut(win);
+export async function clearDockReservation(win?: BrowserWindow | null): Promise<void> {
+  if (process.platform === 'linux' && win && !win.isDestroyed()) {
+    await clearLinuxStrut(win);
+  }
+  if (process.platform === 'win32') {
+    removeWindowsAppBar(win);
+  }
 }
+
+export { isWindowsAppBarRegistered };

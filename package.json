@@ -1,6 +1,6 @@
 {
   "name": "market-overlay",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Always-on-top desktop market data overlay",
   "main": "dist-electron/main/index.js",
   "author": {
@@ -16,13 +16,15 @@
     "test:watch": "vitest",
     "dist": "npm run icons && npm run build && electron-builder --publish never",
     "dist:linux": "npm run icons && npm run build && electron-builder --linux AppImage deb dir --publish never",
-    "dist:win": "npm run icons && npm run build && electron-builder --win nsis portable --publish never",
+    "dist:win": "npm install @koromix/koffi-win32-x64@3.3.2 --force --no-save || true && npm run icons && npm run build && electron-builder --win nsis portable --publish never",
     "dist:mac": "npm run icons && npm run build && electron-builder --mac dmg zip --publish never",
     "icons": "node scripts/generate-icons.mjs",
-    "postinstall": "electron-builder install-app-deps || true"
+    "postinstall": "electron-builder install-app-deps || true",
+    "ensure:koffi-win": "npm install @koromix/koffi-win32-x64@3.3.2 --force --no-save || true"
   },
   "dependencies": {
     "electron-store": "^8.2.0",
+    "koffi": "^3.3.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.18.0",
@@ -110,7 +112,14 @@
     "publish": null,
     "portable": {
       "artifactName": "${productName}-${version}-${arch}-Portable.${ext}"
-    }
+    },
+    "asarUnpack": [
+      "**/node_modules/koffi/**/*",
+      "**/node_modules/@koromix/**/*"
+    ]
   },
-  "homepage": "https://github.com/example/market-overlay"
+  "homepage": "https://github.com/example/market-overlay",
+  "optionalDependencies": {
+    "@koromix/koffi-win32-x64": "3.3.2"
+  }
 }

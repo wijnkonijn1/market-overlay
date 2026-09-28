@@ -148,3 +148,115 @@ export function platformDockSupport(
   if (platform === 'darwin') return 'snap-only';
   return 'none';
 }
+
+/**
+ * Win32 APPBARDATA edge constants (ABE_*).
+ */
+export type AppBarEdge = 0 | 1 | 2 | 3; // left, top, right, bottom
+
+export function dockPositionToAppBarEdge(position: DockPosition): AppBarEdge | null {
+  switch (position) {
+    case 'left':
+      return 0; // ABE_LEFT
+    case 'top':
+      return 1; // ABE_TOP
+    case 'right':
+      return 2; // ABE_RIGHT
+    case 'bottom':
+      return 3; // ABE_BOTTOM
+    default:
+      return null;
+  }
+}
+
+export interface WinRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Convert a DIP rect (Electron) to a physical-pixel Win32 RECT using scaleFactor.
+ */
+export function dipRectToPhysical(rect: Rect, scaleFactor: number): WinRect {
+  const s = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  const left = Math.round(rect.x * s);
+  const top = Math.round(rect.y * s);
+  const right = Math.round((rect.x + rect.width) * s);
+  const bottom = Math.round((rect.y + rect.height) * s);
+  return { left, top, right, bottom };
+}
+
+/**
+ * Convert a physical-pixel Win32 RECT back to a DIP Electron rect.
+ */
+export function physicalRectToDip(rc: WinRect, scaleFactor: number): Rect {
+  const s = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  return {
+    x: Math.round(rc.left / s),
+    y: Math.round(rc.top / s),
+    width: Math.round((rc.right - rc.left) / s),
+    height: Math.round((rc.bottom - rc.top) / s),
+  };
+}
+
+/**
+ * Build the AppBar RECT (physical pixels) for a docked overlay on a display.
+ * Uses full display bounds (same geometry as computeDockBounds) scaled to physical pixels.
+ */
+export function computeAppBarPhysicalRect(
+  displayBoundsDip: Rect,
+  position: DockPosition,
+  thicknessDip: number,
+  scaleFactor: number
+): WinRect | null {
+  const bounds = computeDockBounds(displayBoundsDip, position, thicknessDip);
+  if (!bounds) return null;
+  return dipRectToPhysical(bounds, scaleFactor);
+}
+
+/**
+ * Shrink a work-area rect by the dock strip on the given edge (pure geometry).
+ * Useful for tests and for documenting expected maximize behavior.
+ */
+export function computeReservedWorkArea(
+  workArea: Rect,
+  position: DockPosition,
+  thickness: number
+): Rect | null {
+  if (position === 'floating') return null;
+  const t = clampThickness(thickness);
+  switch (position) {
+    case 'left':
+      return {
+        x: workArea.x + t,
+        y: workArea.y,
+        width: Math.max(0, workArea.width - t),
+        height: workArea.height,
+      };
+    case 'right':
+      return {
+        x: workArea.x,
+        y: workArea.y,
+        width: Math.max(0, workArea.width - t),
+        height: workArea.height,
+      };
+    case 'top':
+      return {
+        x: workArea.x,
+        y: workArea.y + t,
+        width: workArea.width,
+        height: Math.max(0, workArea.height - t),
+      };
+    case 'bottom':
+      return {
+        x: workArea.x,
+        y: workArea.y,
+        width: workArea.width,
+        height: Math.max(0, workArea.height - t),
+      };
+    default:
+      return null;
+  }
+}

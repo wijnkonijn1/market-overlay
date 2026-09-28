@@ -21,6 +21,7 @@ import {
   applyOpacity,
 } from './windowState';
 import { get } from './store';
+import { clearDockReservation } from './dock/workAreaReserve';
 import { IPC } from '../shared/ipc';
 
 if (process.platform === 'linux') {
@@ -180,6 +181,8 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // Best-effort restore of Windows AppBar / Linux strut before exit
+  void clearDockReservation(getMainWindow());
 });
 
 app.on('window-all-closed', () => {
@@ -190,4 +193,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   (app as any).isQuitting = true;
+  void clearDockReservation(getMainWindow());
 });

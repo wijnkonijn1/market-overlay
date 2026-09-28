@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.2 — 2026-09-28
+
+### Fixes
+- **Windows work-area reservation**: when docked with “Reserve screen space”, register a real AppBar via `SHAppBarMessage` (koffi) so maximized apps stop at the overlay edge. Restores cleanly on undock / quit; HWND destroy also drops the AppBar after a crash.
+- Settings label/hint clarify that maximize stops at the overlay (Linux struts / Windows AppBar / macOS snap-only).
+
+## 1.1.1
+
+### Fixes
+- Windows crash when crypto WebSocket closes while CONNECTING
+
 ## 1.1.0 — 2026-09-25
 
 ### Features

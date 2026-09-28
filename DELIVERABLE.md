@@ -1,35 +1,32 @@
-# DELIVERABLE — Market Overlay 1.1.0
+# DELIVERABLE — Market Overlay 1.1.2
 
 ## APPLICATION
 - **Path:** `/workspace/market-overlay`
-- **Version:** 1.1.0
-- **Stack:** Electron + Vite + React + TypeScript, Zustand, electron-store, yahoo-finance2, ws, Vitest, electron-builder
+- **Version:** 1.1.2
+- **Stack:** Electron + Vite + React + TypeScript, Zustand, electron-store, yahoo-finance2, ws, koffi, Vitest, electron-builder
 
-## FEATURES COMPLETED
-1. yahoo-finance2 primary + Yahoo HTTP fallback + CoinGecko crypto fallback (`CompositeProvider`)
-2. Multi-region market calendars + next-open (`marketHours.ts`) wired into quotes/status UI
-3. Optional Binance crypto WebSocket streaming (`CryptoStream.ts`, Settings toggle)
-4. Brand icons (`scripts/generate-icons.mjs` → `build/icons`) + electron-builder targets
-5. Watchlist JSON/CSV import/export (`watchlistIO.ts` + Settings + IPC dialogs)
-6. Dock/snap + reserve work area (`dockBounds.ts`, `workAreaReserve.ts`, Settings)
+## FIX (1.1.2)
+Windows dock “Reserve screen space” now registers a real AppBar via `SHAppBarMessage` (koffi FFI) so maximized apps stop at the overlay edge. Restores on undock/quit; HWND destroy drops the AppBar after a crash.
+
+## PLATFORM LIMITATIONS (dock reservation)
+- Linux/X11: strut reservation supported
+- Windows: AppBar via SHAppBarMessage when reserve is on (edge snap always)
+- macOS: snap only — no third-party work-area reservation API
 
 ## TESTING
 - Framework: Vitest
-- **Passed:** 23 / 23
 - Run: `npm test`
-- Coverage: dock geometry, watchlist IO merge/replace, crypto map + stream merge, multi-region hours, composite fallback mocks
+- Coverage: dock geometry (incl. AppBar DIP↔physical + reserved work area), watchlist IO, crypto map/stream, market hours, composite fallback
 
 ## BUILD / RELEASE
-- `npm run build` — typecheck + Vite/electron build  
-- `npm run dist:linux` — AppImage, deb, dir → `release/`  
+- `npm run dist:win` — NSIS Setup + Portable
+- `npm run dist:linux` — AppImage + deb
 - Signing: unsigned by default; `docs/SIGNING.md`
 
-## HOW A FRIEND INSTALLS
-- **Linux:** download AppImage → `chmod +x` → run; or install `.deb`  
-- **Windows:** run NSIS installer or portable exe (SmartScreen warning if unsigned)  
-- **macOS:** open DMG / unzip (Gatekeeper warning if unsigned); drag to Applications
-
-## PLATFORM LIMITATIONS (dock reservation)
-- Linux/X11: strut reservation supported  
-- Windows: snap always; AppBar reservation best-effort  
-- macOS: snap only — no third-party work-area reservation API
+## MANUAL WINDOWS VERIFICATION
+1. Install/run Setup or Portable on Windows 10/11.
+2. Settings → Dock position = Left (or Right/Top/Bottom).
+3. Ensure “Reserve screen space (maximize stops at overlay)” is checked.
+4. Maximize Notepad/Explorer — should stop at the overlay edge.
+5. Switch to Floating or uncheck reserve — work area should restore.
+6. Quit the app — work area should restore (no permanent desktop corruption).

@@ -42,4 +42,45 @@ describe('dockBounds', () => {
     expect(dock.platformDockSupport('darwin')).toBe('snap-only');
     expect(dock.platformDockSupport('win32')).toBe('appbar');
   });
+
+  it('appbar edge mapping', () => {
+    expect(dock.dockPositionToAppBarEdge('left')).toBe(0);
+    expect(dock.dockPositionToAppBarEdge('top')).toBe(1);
+    expect(dock.dockPositionToAppBarEdge('right')).toBe(2);
+    expect(dock.dockPositionToAppBarEdge('bottom')).toBe(3);
+    expect(dock.dockPositionToAppBarEdge('floating')).toBeNull();
+  });
+
+  it('dip <-> physical rect conversion', () => {
+    const dip = { x: 100, y: 200, width: 420, height: 1080 };
+    const phys = dock.dipRectToPhysical(dip, 1.5);
+    expect(phys).toEqual({ left: 150, top: 300, right: 780, bottom: 1920 });
+    const back = dock.physicalRectToDip(phys, 1.5);
+    expect(back).toEqual(dip);
+  });
+
+  it('computeAppBarPhysicalRect left @ 125%', () => {
+    const rc = dock.computeAppBarPhysicalRect(display, 'left', 400, 1.25)!;
+    expect(rc.left).toBe(0);
+    expect(rc.top).toBe(0);
+    expect(rc.right).toBe(500); // 400 * 1.25
+    expect(rc.bottom).toBe(1350); // 1080 * 1.25
+  });
+
+  it('computeReservedWorkArea shrinks correctly', () => {
+    const wa = { x: 0, y: 0, width: 1920, height: 1040 }; // taskbar already excluded
+    const left = dock.computeReservedWorkArea(wa, 'left', 420)!;
+    expect(left.x).toBe(420);
+    expect(left.width).toBe(1500);
+    const right = dock.computeReservedWorkArea(wa, 'right', 420)!;
+    expect(right.width).toBe(1500);
+    expect(right.x).toBe(0);
+    const top = dock.computeReservedWorkArea(wa, 'top', 300)!;
+    expect(top.y).toBe(300);
+    expect(top.height).toBe(740);
+    const bottom = dock.computeReservedWorkArea(wa, 'bottom', 300)!;
+    expect(bottom.height).toBe(740);
+    expect(dock.computeReservedWorkArea(wa, 'floating', 420)).toBeNull();
+  });
+
 });

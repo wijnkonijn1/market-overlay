@@ -23,7 +23,7 @@ import {
   getDisplayBoundsForWindow,
 } from './windowState';
 import { rebuildTrayMenu } from './tray';
-import { applyDock } from './dock/workAreaReserve';
+import { applyDock, type DockApplyResult } from './dock/workAreaReserve';
 import { cryptoStream } from './market/CryptoStream';
 import { getNextOpenTime } from './market/marketHours';
 import {
@@ -37,6 +37,7 @@ import { isCryptoSymbol } from '../shared/cryptoMap';
 import { thicknessFromBounds, platformDockSupport } from '../shared/dockBounds';
 
 let mainWindowRef: BrowserWindow | null = null;
+let lastDockResult: DockApplyResult | null = null;
 
 export function setMainWindow(win: BrowserWindow | null): void {
   mainWindowRef = win;
@@ -77,6 +78,7 @@ export async function applyDockFromSettings(win?: BrowserWindow | null): Promise
   const thickness = settings.dockThickness ?? 420;
   const reserve = settings.reserveWorkArea !== false && position !== 'floating';
   const result = await applyDock(target, displayBounds, position, thickness, reserve);
+  lastDockResult = result;
   console.debug('[dock]', result.detail);
 }
 
@@ -221,7 +223,7 @@ export function registerIpcHandlers(): void {
       position: s.dockPosition,
       reserveWorkArea: s.reserveWorkArea,
       thickness: s.dockThickness,
-      workAreaReserved: false,
+      workAreaReserved: lastDockResult?.workAreaReserved ?? false,
       platformSupport: platformDockSupport(),
     };
   });
