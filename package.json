@@ -1,0 +1,116 @@
+{
+  "name": "market-overlay",
+  "version": "1.1.0",
+  "description": "Always-on-top desktop market data overlay",
+  "main": "dist-electron/main/index.js",
+  "author": {
+    "name": "Market Overlay",
+    "email": "market-overlay@example.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist": "npm run icons && npm run build && electron-builder --publish never",
+    "dist:linux": "npm run icons && npm run build && electron-builder --linux AppImage deb dir --publish never",
+    "dist:win": "npm run icons && npm run build && electron-builder --win nsis portable --publish never",
+    "dist:mac": "npm run icons && npm run build && electron-builder --mac dmg zip --publish never",
+    "icons": "node scripts/generate-icons.mjs",
+    "postinstall": "electron-builder install-app-deps || true"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ws": "^8.18.0",
+    "yahoo-finance2": "^2.13.3",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.12",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "jsdom": "^24.1.1",
+    "pngjs": "^7.0.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.4",
+    "vite-plugin-electron": "^0.28.7",
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vitest": "^2.0.4"
+  },
+  "build": {
+    "appId": "com.marketoverlay.app",
+    "productName": "Market Overlay",
+    "copyright": "Copyright \u00a9 Market Overlay",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "build/icons/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icons",
+        "to": "icons",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "forceCodeSigning": false,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "dir"
+      ],
+      "category": "Finance",
+      "icon": "build/icons",
+      "synopsis": "Always-on-top market data overlay",
+      "description": "Desktop overlay for stocks, ETFs, indices and crypto with live quotes and alerts.",
+      "maintainer": "Market Overlay <market-overlay@example.com>"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.finance",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "icon": "build/icon.icns"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "publish": null,
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-Portable.${ext}"
+    }
+  },
+  "homepage": "https://github.com/example/market-overlay"
+}
