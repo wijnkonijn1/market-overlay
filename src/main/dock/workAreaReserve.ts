@@ -178,7 +178,8 @@ export async function applyDock(
   displayBounds: Rect,
   position: DockPosition,
   thickness: number,
-  reserveWorkArea: boolean
+  reserveWorkArea: boolean,
+  scaleFactor?: number
 ): Promise<DockApplyResult> {
   beginApplyingDock();
   try {
@@ -190,13 +191,16 @@ export async function applyDock(
     applyDockMinimumSize(win, position);
     const bounds = computeDockBounds(displayBounds, position, t);
 
+    // Cache scale factor or resolve once
+    const sf = scaleFactor ?? resolveScaleFactor(win, displayBounds);
+
     // Exact user dock rect first — before AppBar — so Electron is not fighting a strut.
     if (bounds && !win.isDestroyed()) {
       win.setBounds({
-        x: Math.round(bounds.x),
-        y: Math.round(bounds.y),
-        width: Math.round(bounds.width),
-        height: Math.round(bounds.height),
+        x: Math.floor(bounds.x),
+        y: Math.floor(bounds.y),
+        width: Math.floor(bounds.width),
+        height: Math.floor(bounds.height),
       });
     }
 
@@ -236,8 +240,7 @@ export async function applyDock(
     }
 
     if (process.platform === 'win32') {
-      const scaleFactor = resolveScaleFactor(win, displayBounds);
-      const result = registerWindowsAppBar(win, displayBounds, position, t, scaleFactor);
+      const result = registerWindowsAppBar(win, displayBounds, position, t, sf);
       // approvedRectDip is always the user-thickness rect (never QUERYPOS-expanded)
       const finalBounds = result.approvedRectDip ?? bounds;
       return {

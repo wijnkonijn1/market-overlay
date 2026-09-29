@@ -1,6 +1,6 @@
 {
   "name": "market-overlay",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "description": "Always-on-top desktop market data overlay",
   "main": "dist-electron/main/index.js",
   "author": {
@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "dist": "npm run icons && npm run build && electron-builder --publish never",
     "dist:linux": "npm run icons && npm run build && electron-builder --linux AppImage deb dir --publish never",
-    "dist:win": "npm install @koromix/koffi-win32-x64@3.3.2 --force --no-save || true && npm run icons && npm run build && ELECTRON_BUILDER_7Z_FILTER=BCJ electron-builder --win nsis portable --publish never && node scripts/ensure-electron-win-dlls.cjs release/win-unpacked",
+    "dist:win": "npm install @koromix/koffi-win32-x64@3.3.2 --force --no-save || true && npm run icons && npm run build && ELECTRON_BUILDER_7Z_FILTER=BCJ electron-builder --win nsis portable --publish never",
     "dist:mac": "npm run icons && npm run build && electron-builder --mac dmg zip --publish never",
     "icons": "node scripts/generate-icons.mjs",
     "postinstall": "electron-builder install-app-deps || true",
@@ -51,7 +51,7 @@
   "build": {
     "appId": "com.marketoverlay.app",
     "productName": "Market Overlay",
-    "copyright": "Copyright \u00a9 Market Overlay",
+    "copyright": "Copyright © Market Overlay",
     "directories": {
       "output": "release",
       "buildResources": "build"

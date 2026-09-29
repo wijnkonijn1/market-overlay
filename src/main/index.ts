@@ -94,7 +94,10 @@ function createWindow(): BrowserWindow {
 
   win.once('ready-to-show', async () => {
     win.show();
-    await applyDockFromSettings(win);
+    // Fire dock apply in background (non-blocking) for faster startup
+    applyDockFromSettings(win).catch((err) => {
+      console.warn('[dock] background apply failed:', err);
+    });
     syncCryptoStreamFromState();
   });
 

@@ -6,9 +6,9 @@
  *
  * Uses koffi for FFI. On process exit / HWND destroy, the shell removes the AppBar.
  *
- * Thickness policy (v1.1.5+):
+ * Thickness policy (v1.2.0+):
  * 1. Persist user thickness first (caller).
- * 2. Set Electron bounds to the exact dock rect for that thickness.
+ * 2. Set Electron bounds to the exact dock rect for that thickness (using floor for consistency).
  * 3. Register AppBar to the same rect; after ABM_QUERYPOS, force the thickness
  *    axis back to the user size (never expand past the user's choice).
  * 4. Deferred re-assert (~150ms) only if the OS moved the window incorrectly,
@@ -65,6 +65,7 @@ function loadApi(): AppBarApi | null {
     return null;
   }
   try {
+    // Lazy-load koffi only when Windows AppBar is needed
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const koffiMod = require('koffi');
     const koffi = (koffiMod && koffiMod.default) ? koffiMod.default : koffiMod;
@@ -158,11 +159,12 @@ function applyUserDockBounds(
   if (boundsMatchDockThickness(current, position, thicknessDip, displayBoundsDip)) {
     return;
   }
+  // Use floor for consistent pixel-perfect edge alignment
   win.setBounds({
-    x: Math.round(intendedDip.x),
-    y: Math.round(intendedDip.y),
-    width: Math.max(1, Math.round(intendedDip.width)),
-    height: Math.max(1, Math.round(intendedDip.height)),
+    x: Math.floor(intendedDip.x),
+    y: Math.floor(intendedDip.y),
+    width: Math.max(1, Math.floor(intendedDip.width)),
+    height: Math.max(1, Math.floor(intendedDip.height)),
   });
 }
 
