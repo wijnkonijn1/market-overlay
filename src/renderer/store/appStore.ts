@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { sanitizeDecimals } from '../../shared/priceFormat';
 import type {
   PersistedState,
   AppSettings,
@@ -40,6 +41,8 @@ interface AppStore {
   setActiveWatchlist: (id: string) => void;
   addTicker: (ticker: TickerItem) => void;
   removeTicker: (symbol: string) => void;
+  /** Per-ticker price decimals (0–8) in the active watchlist; undefined = automatic. */
+  setTickerDecimals: (symbol: string, decimals: number | undefined) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
   setQuotes: (quotes: Quote[], opts?: { unavailable?: boolean }) => void;
   applyQuotePartial: (update: QuotePartialUpdate) => void;
@@ -143,6 +146,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
         if (w.id !== s.activeWatchlistId) return w;
         if (w.tickers.some((t) => t.symbol === item.symbol)) return w;
         return { ...w, tickers: [...w.tickers, item] };
+      }),
+    }));
+    void get().persist();
+  },
+
+  setTickerDecimals: (symbol, decimals) => {
+    const d = sanitizeDecimals(decimals);
+    set((s) => ({
+      watchlists: s.watchlists.map((w) => {
+        if (w.id !== s.activeWatchlistId) return w;
+        return {
+          ...w,
+          tickers: w.tickers.map((t) => {
+            if (t.symbol !== symbol) return t;
+            const { decimals: _old, ...rest } = t;
+            return d === undefined ? rest : { ...rest, decimals: d };
+          }),
+        };
       }),
     }));
     void get().persist();

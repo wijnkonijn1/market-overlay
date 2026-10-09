@@ -20,6 +20,7 @@ export const IPC = {
   APP_GET_VERSION: 'app:getVersion',
   APP_OPEN_LOG_FOLDER: 'app:openLogFolder',
   DOCK_UI_LOG: 'dock:uiLog',
+  TICKER_CONTEXT_MENU: 'ticker:contextMenu',
 
   STORE_GET: 'store:get',
   STORE_SET: 'store:set',
@@ -96,3 +97,18 @@ export interface DockState {
   workAreaReserved: boolean;
   platformSupport: 'strut' | 'appbar' | 'snap-only' | 'none';
 }
+
+export interface TickerContextMenuRequest {
+  symbol: string;
+  displaySymbol: string;
+  /** Current per-ticker decimals; undefined/null = automatic. */
+  decimals?: number | null;
+  /** Label for the automatic value, e.g. "4" or "2–6". */
+  autoLabel: string;
+}
+
+export type TickerContextMenuResult =
+  | { action: 'decimals'; decimals: number | null }
+  | { action: 'remove' }
+  | { action: 'details' }
+  | null;

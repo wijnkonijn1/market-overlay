@@ -5,6 +5,7 @@ import {
   MIN_DOCK_THICKNESS,
   MAX_DOCK_THICKNESS,
   COMPACT_DOCK_THRESHOLD,
+  MEDIUM_DOCK_THRESHOLD,
 } from '../../shared/dockBounds';
 import { refreshLabel } from '../utils/format';
 import { scheduleRefresh } from '../services/marketService';
@@ -180,7 +181,8 @@ export function SettingsPanel() {
       <p className="hint">
         Width when docked left/right, height when top/bottom. Drag the inner edge of the
         docked window to resize, use −/+ or type a value, tray “Dock smaller/larger”, or
-        Ctrl+Alt+[ / Ctrl+Alt+]. Below {COMPACT_DOCK_THRESHOLD}px only ticker + price are shown.
+        Ctrl+Alt+[ / Ctrl+Alt+]. From {COMPACT_DOCK_THRESHOLD}px: ticker + price + %; below that ticker + price only;
+        from {MEDIUM_DOCK_THRESHOLD}px also the absolute change and name.
         Disabled while floating.
       </p>
 

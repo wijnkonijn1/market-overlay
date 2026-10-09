@@ -3,9 +3,16 @@ import { useAppStore } from './store/appStore';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AddTickerModal } from './components/AddTickerModal';
 import { DockResizeHandle } from './components/DockResizeHandle';
-import { formatPrice, formatChange } from './utils/format';
+import {
+  formatTickerPrice,
+  formatTickerChange,
+  formatPercentChange,
+  autoDecimalsLabel,
+  DECIMAL_CHOICES,
+} from './utils/format';
 import { refreshQuotes, scheduleRefresh } from './services/marketService';
 import { dockRowDensity } from '../shared/dockBounds';
+import type { TickerItem } from '../shared/types';
 
 export function App() {
   // Version comes from the main process (app.getVersion() = package.json), never hardcoded.
@@ -32,14 +39,40 @@ export function App() {
   const applyQuotePartial = useAppStore((s) => s.applyQuotePartial);
   const setCryptoStream = useAppStore((s) => s.setCryptoStream);
   const active = useAppStore((s) => s.activeWatchlist());
+  const setTickerDecimals = useAppStore((s) => s.setTickerDecimals);
+  const selectedTicker = active?.tickers.find((t) => t.symbol === selectedSymbol);
+
+  // Native right-click menu per row: Decimals (Auto / 0–8), Details, Remove.
+  const onRowContextMenu = useCallback(
+    async (t: TickerItem, price: number) => {
+      const api = window.marketOverlay;
+      if (!api?.showTickerContextMenu) return;
+      const res = await api.showTickerContextMenu({
+        symbol: t.symbol,
+        displaySymbol: t.displaySymbol,
+        decimals: t.decimals ?? null,
+        autoLabel: autoDecimalsLabel(t.symbol, t.type, price),
+      });
+      if (!res) return;
+      if (res.action === 'decimals') setTickerDecimals(t.symbol, res.decimals ?? undefined);
+      else if (res.action === 'remove') removeTicker(t.symbol);
+      else if (res.action === 'details') {
+        setSelectedSymbol(t.symbol);
+        setPanel('detail');
+      }
+    },
+    [setTickerDecimals, removeTicker, setSelectedSymbol, setPanel]
+  );
 
   const density = useMemo(
     () => dockRowDensity(settings.dockPosition, settings.dockThickness),
     [settings.dockPosition, settings.dockThickness]
   );
   const isCompact = density === 'compact';
-  // compact: symbol + price only; medium: + change %; full: + name (unless layout=compact)
+  // compact (<150): symbol + price; medium (150–299): + % change only;
+  // full (≥300): + absolute change and name (unless layout=compact)
   const showChange = density !== 'compact';
+  const percentOnly = density === 'medium';
   const showName = density === 'full' && settings.layout !== 'compact';
 
   useEffect(() => {
@@ -202,19 +235,27 @@ export function App() {
               key={t.symbol}
               className={rowClass}
               onClick={() => setSelectedSymbol(t.symbol)}
+              title="Right-click: decimals / details / remove"
               onContextMenu={(e) => {
                 e.preventDefault();
-                removeTicker(t.symbol);
+                void onRowContextMenu(t, q?.price ?? 0);
               }}
             >
               <div className="sym-block">
                 <div className="sym">{t.displaySymbol}</div>
                 {showName && <div className="name">{q?.name || t.name || t.symbol}</div>}
               </div>
-              <div className="price">{q ? formatPrice(q.price, q.currency) : '—'}</div>
+              <div className="price">{q ? formatTickerPrice(t, q.price, q.currency) : '—'}</div>
               {showChange && (
-                <div className={`chg ${up ? 'up' : 'down'}`}>
-                  {q ? formatChange(q.change, q.changePercent) : '—'}
+                <div
+                  className={`chg ${up ? 'up' : 'down'}`}
+                  title={q && percentOnly ? formatTickerChange(t, q.price, q.change, q.changePercent) : undefined}
+                >
+                  {q
+                    ? percentOnly
+                      ? formatPercentChange(q.changePercent)
+                      : formatTickerChange(t, q.price, q.change, q.changePercent)
+                    : '—'}
                 </div>
               )}
             </div>
@@ -230,9 +271,47 @@ export function App() {
             <h3>{selectedSymbol}</h3>
             <button type="button" className="icon-btn" onClick={() => setPanel('none')}>×</button>
           </div>
+          {selectedTicker && (
+            <label className="setting row no-drag">
+              <span>Decimals</span>
+              <select
+                aria-label="Price decimals"
+                value={selectedTicker.decimals === undefined ? 'auto' : String(selectedTicker.decimals)}
+                onChange={(e) =>
+                  setTickerDecimals(
+                    selectedTicker.symbol,
+                    e.target.value === 'auto' ? undefined : Number(e.target.value)
+                  )
+                }
+              >
+                <option value="auto">
+                  Auto ({autoDecimalsLabel(selectedTicker.symbol, selectedTicker.type, quotes[selectedSymbol]?.price ?? 0)})
+                </option>
+                {DECIMAL_CHOICES.map((d) => (
+                  <option key={d} value={String(d)}>{d}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {quotes[selectedSymbol] ? (
             <div className="hint">
-              <div>Price: {formatPrice(quotes[selectedSymbol].price, quotes[selectedSymbol].currency)}</div>
+              <div>
+                Price:{' '}
+                {formatTickerPrice(
+                  selectedTicker ?? { symbol: selectedSymbol },
+                  quotes[selectedSymbol].price,
+                  quotes[selectedSymbol].currency
+                )}
+              </div>
+              <div>
+                Change:{' '}
+                {formatTickerChange(
+                  selectedTicker ?? { symbol: selectedSymbol },
+                  quotes[selectedSymbol].price,
+                  quotes[selectedSymbol].change,
+                  quotes[selectedSymbol].changePercent
+                )}
+              </div>
               <div>State: {quotes[selectedSymbol].marketState}</div>
               {quotes[selectedSymbol].nextOpenLabel && (
                 <div>Next open: {quotes[selectedSymbol].nextOpenLabel}</div>

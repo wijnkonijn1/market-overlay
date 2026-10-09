@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.9 — 2026-10-09
+
+### New
+- **Decimals per ticker.** You can set how many decimals each ticker shows (0–8), or leave it on Auto.
+  - **Right-click a row:** native menu with **Decimals ▸ Auto / 0–8**, **Details**, and **Remove from watchlist**. Before this, right-click removed the ticker straight away.
+  - **Detail view** (click a row): **Decimals** dropdown.
+  - **Auto:** forex (`…=X` / currency) 4; stocks, ETFs and indices 2; crypto and other prices below 1 keep up to 6.
+  - Applies to the price and the absolute change in every row layout, including compact, and in the detail view (which now also shows Change). Percent change stays at 2 decimals.
+  - Saved with the watchlist and included in JSON/CSV export and import. CSV has a new `decimals` column; an empty value means Auto. Older files without the column import as Auto. CSV import now reads columns by header name.
+- **% change from 150px.** A docked strip now shows ticker + price + % change from **150px** thickness (previously 200px).
+  - **Below 150px:** ticker + price only.
+  - **150–299px:** ticker + price + % change in a tighter font and padding. Hover the % to see the absolute change.
+  - **300px and up:** full rows with the absolute change, % change and name.
+  - The price and % never wrap or get cut off; only a long ticker name can be shortened with "…". The scrollbar is thinner in narrow docks.
+
 ## 1.1.8 — 2026-10-09
 
 ### Fixes

@@ -24,6 +24,8 @@ npm run dist:win       # → release/ NSIS Setup + Portable (verifies ffmpeg.dll
 4. **Brand icons + installers** for Linux/Windows/macOS  
 5. **Watchlist JSON/CSV import/export**  
 6. **Dock / snap** with optional work-area reservation (platform-dependent)
+7. **Decimals per ticker** (right-click a row or the detail view): Auto (forex 4, stocks 2, small prices up to 6) or 0–8; kept in JSON/CSV export (`decimals` column)
+8. **Dock row density**: <150px ticker + price · 150–299px + % change · ≥300px full (absolute change + name)
 
 ## Dock / work-area reservation (honest per-OS)
 

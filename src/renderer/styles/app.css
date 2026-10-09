@@ -103,8 +103,21 @@ html, body, #root { margin: 0; height: 100%; background: transparent; color: var
 }
 .stream-on { color: var(--accent); }
 
-.row-compact { grid-template-columns: 1fr auto; gap: 6px; padding: 6px 8px; }
-.row-medium { grid-template-columns: 1fr auto auto; gap: 6px; padding: 6px 8px; }
+.row-compact { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 6px 8px; }
+/* Medium (150–299px): ticker + price + % must fit at 150px. Only the ticker may
+   shrink/ellipsis; price and % never wrap or get cut. */
+.row-medium { grid-template-columns: minmax(0, 1fr) auto auto; gap: 3px; padding: 5px 3px; }
+.row-medium .sym-block, .row-compact .sym-block { min-width: 0; }
+.row-medium .sym, .row-compact .sym { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-medium .sym { font-size: 11px; }
+.row-medium .price { font-size: 11px; white-space: nowrap; }
+.row-medium .chg { font-size: 10px; white-space: nowrap; }
+.row-compact .price { white-space: nowrap; }
+.app.density-medium .list { padding: 2px 1px; }
+.app.density-compact .list::-webkit-scrollbar,
+.app.density-medium .list::-webkit-scrollbar { width: 4px; height: 4px; }
+.app.density-compact .list::-webkit-scrollbar-thumb,
+.app.density-medium .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 2px; }
 .row-compact .sym { font-size: 12px; }
 .row-compact .price { font-size: 12px; }
 .app.density-compact .titlebar { padding: 4px 8px; font-size: 11px; }

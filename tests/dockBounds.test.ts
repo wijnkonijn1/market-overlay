@@ -85,6 +85,16 @@ describe('dockBounds', () => {
     expect(dock.computeReservedWorkArea(wa, 'floating', 420)).toBeNull();
   });
 
+  it('dockRowDensity thresholds (v1.1.9): <150 compact, 150–299 medium (with %), ≥300 full', () => {
+    expect(dock.COMPACT_DOCK_THRESHOLD).toBe(150);
+    expect(dock.MEDIUM_DOCK_THRESHOLD).toBe(300);
+    expect(dock.dockRowDensity('right', 149)).toBe('compact');
+    expect(dock.dockRowDensity('right', 150)).toBe('medium');
+    expect(dock.dockRowDensity('left', 299)).toBe('medium');
+    expect(dock.dockRowDensity('left', 300)).toBe('full');
+    expect(dock.MIN_DOCK_THICKNESS).toBeLessThan(dock.COMPACT_DOCK_THRESHOLD);
+  });
+
   it('dockRowDensity: floating always full', () => {
     expect(dock.dockRowDensity('floating', 140)).toBe('full');
     expect(dock.dockRowDensity('floating', 500)).toBe('full');
@@ -100,7 +110,8 @@ describe('dockBounds', () => {
   });
 
   it('dockRowDensity uses same thresholds for horizontal and vertical docks', () => {
-    expect(dock.dockRowDensity('top', 180)).toBe('compact');
+    expect(dock.dockRowDensity('top', 145)).toBe('compact');
+    expect(dock.dockRowDensity('top', 180)).toBe('medium');
     expect(dock.dockRowDensity('bottom', 250)).toBe('medium');
     expect(dock.dockRowDensity('left', 250)).toBe('medium');
   });

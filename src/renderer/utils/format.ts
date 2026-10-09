@@ -1,18 +1,21 @@
+import { formatPriceWith, formatChangeWith, autoDecimals } from '../../shared/priceFormat';
+
+/** Legacy helpers (automatic decimals, no ticker context). Prefer formatTickerPrice. */
 export function formatPrice(n: number, currency = 'USD'): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency', currency, currencyDisplay: 'narrowSymbol',
-      maximumFractionDigits: n < 1 ? 6 : 2,
-    }).format(n);
-  } catch {
-    return n.toFixed(2);
-  }
+  return formatPriceWith(n, currency, autoDecimals('', undefined, n));
 }
 
 export function formatChange(n: number, pct: number): string {
-  const sign = n > 0 ? '+' : '';
-  return `${sign}${n.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+  return formatChangeWith(n, pct, { min: 2, max: 2 });
 }
+
+export {
+  formatTickerPrice,
+  formatTickerChange,
+  formatPercentChange,
+  autoDecimalsLabel,
+  DECIMAL_CHOICES,
+} from '../../shared/priceFormat';
 
 export function refreshLabel(seconds: number): string {
   if (seconds === 0) return 'Manual';

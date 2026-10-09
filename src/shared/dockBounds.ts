@@ -20,10 +20,12 @@ export const LEGACY_DEFAULT_DOCK_THICKNESS = 420;
 
 /**
  * Below this thickness (width for L/R, height for T/B), rows show symbol + price only.
+ * From 150px up the % change is shown too (v1.1.9; was 200).
  */
-export const COMPACT_DOCK_THRESHOLD = 200;
+export const COMPACT_DOCK_THRESHOLD = 150;
 /**
- * Below this (and ≥ compact threshold), rows show symbol + price + change (no name/meta).
+ * Below this (and ≥ compact threshold), rows show symbol + price + % change (tight layout,
+ * no name, no absolute change). From here up: full rows (absolute + % change, name).
  */
 export const MEDIUM_DOCK_THRESHOLD = 300;
 

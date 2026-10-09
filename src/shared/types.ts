@@ -68,6 +68,8 @@ export interface TickerItem {
   name?: string;
   type: AssetType;
   exchange?: string;
+  /** Price decimals 0–8; undefined = automatic (forex 4, others 2 / up to 6 below 1). */
+  decimals?: number;
 }
 
 export interface Watchlist {

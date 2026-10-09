@@ -1,6 +1,7 @@
 import {
   ipcMain,
   BrowserWindow,
+  Menu,
   shell,
   Notification,
   app,
@@ -14,7 +15,10 @@ import type {
   QuotePartialUpdate,
   CryptoStreamStatus,
   DockState,
+  TickerContextMenuRequest,
+  TickerContextMenuResult,
 } from '../shared/ipc';
+import { DECIMAL_CHOICES } from '../shared/priceFormat';
 import type { PersistedState, Timeframe, DockPosition } from '../shared/types';
 import * as persist from './store';
 import { marketDataService } from './market/CompositeProvider';
@@ -207,6 +211,9 @@ export function registerIpcHandlers(): void {
     }
   });
   ipcMain.handle(IPC.APP_GET_VERSION, () => app.getVersion());
+  ipcMain.handle(IPC.TICKER_CONTEXT_MENU, (e, req: TickerContextMenuRequest) =>
+    showTickerContextMenu(BrowserWindow.fromWebContents(e.sender), req)
+  );
   ipcMain.handle(IPC.APP_OPEN_LOG_FOLDER, () => openDockLogFolder());
   ipcMain.on?.(IPC.DOCK_UI_LOG, (_e, msg: string) => dockLog('ui', String(msg).slice(0, 500)));
   ipcMain.handle(IPC.APP_NOTIFY, (_e, payload: { title: string; body: string }) => {
@@ -345,4 +352,52 @@ export async function openDockLogFolder(): Promise<string | null> {
     await shell.openPath(dir);
   } catch { /* ignore */ }
   return dir;
+}
+
+/**
+ * Native right-click menu for a ticker row (native so it is never clipped by a
+ * narrow dock). Resolves with the chosen action, or null if dismissed.
+ */
+export function showTickerContextMenu(
+  win: BrowserWindow | null,
+  req: TickerContextMenuRequest
+): Promise<TickerContextMenuResult> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r: TickerContextMenuResult) => {
+      if (done) return;
+      done = true;
+      resolve(r);
+    };
+    const cur = req.decimals ?? null;
+    const decimalsItems: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: `Auto (${req.autoLabel})`,
+        type: 'radio',
+        checked: cur === null,
+        click: () => finish({ action: 'decimals', decimals: null }),
+      },
+      { type: 'separator' },
+      ...DECIMAL_CHOICES.map((d): Electron.MenuItemConstructorOptions => ({
+        label: String(d),
+        type: 'radio',
+        checked: cur === d,
+        click: () => finish({ action: 'decimals', decimals: d }),
+      })),
+    ];
+    const menu = Menu.buildFromTemplate([
+      { label: req.displaySymbol || req.symbol, enabled: false },
+      { type: 'separator' },
+      { label: 'Decimals', submenu: decimalsItems },
+      { label: 'Details', click: () => finish({ action: 'details' }) },
+      { type: 'separator' },
+      { label: 'Remove from watchlist', click: () => finish({ action: 'remove' }) },
+    ]);
+    menu.popup({
+      window: win ?? undefined,
+      // On Windows the click can be delivered after the close callback, so
+      // only treat it as "dismissed" if no item fired shortly after closing.
+      callback: () => setTimeout(() => finish(null), 300),
+    });
+  });
 }

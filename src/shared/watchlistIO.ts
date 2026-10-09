@@ -2,6 +2,7 @@
  * Pure serialize/parse helpers for watchlist JSON/CSV import/export.
  */
 import type { Watchlist, TickerItem, AssetType } from './types';
+import { sanitizeDecimals } from './priceFormat';
 
 export const WATCHLIST_IO_VERSION = 1;
 
@@ -19,17 +20,22 @@ function uid(prefix = 'wl'): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function sanitizeTicker(raw: Partial<TickerItem> & { symbol?: string }): TickerItem | null {
+function sanitizeTicker(
+  raw: Omit<Partial<TickerItem>, 'decimals'> & { symbol?: string; decimals?: unknown }
+): TickerItem | null {
   const symbol = (raw.symbol || '').trim();
   if (!symbol) return null;
   const type = ASSET_TYPES.includes(raw.type as AssetType) ? (raw.type as AssetType) : 'other';
-  return {
+  const t: TickerItem = {
     symbol,
     displaySymbol: (raw.displaySymbol || symbol).trim() || symbol,
     name: raw.name?.trim() || undefined,
     type,
     exchange: raw.exchange?.trim() || undefined,
   };
+  const decimals = sanitizeDecimals(raw.decimals);
+  if (decimals !== undefined) t.decimals = decimals; // missing/invalid = automatic
+  return t;
 }
 
 function sanitizeWatchlist(raw: Partial<Watchlist>): Watchlist | null {
@@ -112,7 +118,7 @@ function splitCsvLine(line: string): string[] {
 }
 
 export function serializeWatchlistsCsv(watchlists: Watchlist[]): string {
-  const rows = ['watchlist,symbol,displaySymbol,name,type,exchange'];
+  const rows = ['watchlist,symbol,displaySymbol,name,type,exchange,decimals'];
   for (const wl of watchlists) {
     for (const t of wl.tickers) {
       rows.push(
@@ -123,6 +129,7 @@ export function serializeWatchlistsCsv(watchlists: Watchlist[]): string {
           csvEscape(t.name || ''),
           csvEscape(t.type),
           csvEscape(t.exchange || ''),
+          t.decimals === undefined ? '' : String(t.decimals), // empty = auto
         ].join(',')
       );
     }
@@ -140,19 +147,39 @@ export function parseWatchlistsCsv(text: string): Watchlist[] {
   const headerFields = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
   const hasHeader = headerFields[0] === 'watchlist';
   const dataLines = hasHeader ? lines.slice(1) : lines;
+  // Column positions from the header when present (older files have no "decimals").
+  const col = (name: string, fallback: number) => {
+    if (!hasHeader) return fallback;
+    const i = headerFields.indexOf(name.toLowerCase());
+    return i;
+  };
+  const cDecimals = col('decimals', 6);
+  // Legacy files always had the fixed order; use header positions when present.
+  const pos = (name: string, fallback: number) => {
+    const i = col(name, fallback);
+    return i >= 0 ? i : hasHeader ? -1 : fallback;
+  };
+  const cWl = pos('watchlist', 0);
+  const cSym = pos('symbol', 1);
+  const cDisp = pos('displaysymbol', 2);
+  const cName = pos('name', 3);
+  const cType = pos('type', 4);
+  const cExch = pos('exchange', 5);
+  const at = (cols: string[], i: number) => (i >= 0 ? cols[i] : undefined);
   const byName = new Map<string, Watchlist>();
 
   for (const line of dataLines) {
     const cols = splitCsvLine(line).map(csvUnescape);
-    const watchlistName = (cols[0] || 'Imported').trim() || 'Imported';
-    const symbol = (cols[1] || '').trim();
+    const watchlistName = (at(cols, cWl) || 'Imported').trim() || 'Imported';
+    const symbol = (at(cols, cSym) || '').trim();
     if (!symbol) continue;
     const ticker = sanitizeTicker({
       symbol,
-      displaySymbol: cols[2] || symbol,
-      name: cols[3] || undefined,
-      type: (cols[4] as AssetType) || 'other',
-      exchange: cols[5] || undefined,
+      displaySymbol: at(cols, cDisp) || symbol,
+      name: at(cols, cName) || undefined,
+      type: (at(cols, cType) as AssetType) || 'other',
+      exchange: at(cols, cExch) || undefined,
+      decimals: at(cols, cDecimals),
     });
     if (!ticker) continue;
     let wl = byName.get(watchlistName);

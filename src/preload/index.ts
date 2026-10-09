@@ -9,6 +9,8 @@ import type {
   QuotePartialUpdate,
   CryptoStreamStatus,
   DockState,
+  TickerContextMenuRequest,
+  TickerContextMenuResult,
 } from '../shared/ipc';
 
 const api = {
@@ -79,6 +81,8 @@ const api = {
     ipcRenderer.on(IPC.EVENT_DOCK_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC.EVENT_DOCK_CHANGED, handler);
   },
+  showTickerContextMenu: (req: TickerContextMenuRequest) =>
+    ipcRenderer.invoke(IPC.TICKER_CONTEXT_MENU, req) as Promise<TickerContextMenuResult>,
   dockUiLog: (msg: string) => ipcRenderer.send(IPC.DOCK_UI_LOG, String(msg).slice(0, 500)),
   openLogFolder: () => ipcRenderer.invoke(IPC.APP_OPEN_LOG_FOLDER) as Promise<string | null>,
   onStateReload: (cb: () => void) => {
