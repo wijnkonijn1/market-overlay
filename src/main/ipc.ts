@@ -34,7 +34,7 @@ import {
   applyWatchlistImport,
 } from '../shared/watchlistIO';
 import { isCryptoSymbol } from '../shared/cryptoMap';
-import { thicknessFromBounds, platformDockSupport, clampThickness } from '../shared/dockBounds';
+import { platformDockSupport, clampThickness, DEFAULT_DOCK_THICKNESS } from '../shared/dockBounds';
 
 let mainWindowRef: BrowserWindow | null = null;
 let lastDockResult: DockApplyResult | null = null;
@@ -91,7 +91,7 @@ export async function applyDockFromSettings(win?: BrowserWindow | null): Promise
     const settings = persist.get('settings');
     const displayBounds = getDisplayBoundsForWindow(target);
     const position = settings.dockPosition ?? 'floating';
-    const thickness = settings.dockThickness ?? 420;
+    const thickness = settings.dockThickness ?? DEFAULT_DOCK_THICKNESS;
     const reserve = settings.reserveWorkArea !== false && position !== 'floating';
     const result = await applyDock(target, displayBounds, position, thickness, reserve);
     if (seq !== dockApplySeq) return; // superseded while applying
@@ -177,6 +177,7 @@ export function registerIpcHandlers(): void {
       return false;
     }
   });
+  ipcMain.handle(IPC.APP_GET_VERSION, () => app.getVersion());
   ipcMain.handle(IPC.APP_NOTIFY, (_e, payload: { title: string; body: string }) => {
     if (!Notification.isSupported()) return false;
     new Notification({
@@ -188,28 +189,22 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.STORE_GET_ALL, () => persist.getAll());
   ipcMain.handle(IPC.STORE_SET_ALL, async (_e, state: PersistedState) => {
-    const prev = persist.get('settings');
-    persist.setAll(state);
+    // Dock fields + window bounds are main-owned; a (debounced, possibly stale)
+    // renderer snapshot must never re-apply an old thickness.
+    persist.setAllFromRenderer(state);
     rebuildTrayMenu();
     syncCryptoStreamFromState();
-    if (
-      prev.dockPosition !== state.settings.dockPosition ||
-      prev.reserveWorkArea !== state.settings.reserveWorkArea ||
-      prev.dockThickness !== state.settings.dockThickness
-    ) {
-      await applyDockFromSettings();
-    }
   });
   ipcMain.handle(IPC.STORE_GET, (_e, key: keyof PersistedState) => persist.get(key));
   ipcMain.handle(IPC.STORE_SET, async (_e, key: keyof PersistedState, value: unknown) => {
-    persist.set(key, value as never);
+    if (key === 'settings') persist.mergeSettingsFromRenderer(value as PersistedState['settings']);
+    else if (key !== 'window') persist.set(key, value as never);
     if (key === 'watchlists' || key === 'activeWatchlistId') {
       rebuildTrayMenu();
       syncCryptoStreamFromState();
     }
     if (key === 'settings') {
       syncCryptoStreamFromState();
-      await applyDockFromSettings();
     }
   });
 
@@ -229,11 +224,9 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(IPC.DOCK_SET, async (_e, position: DockPosition) => {
+    // Keep the stored thickness: deriving it from the (floating) window size
+    // made the dock open at the floating width (420+).
     const settings = { ...persist.get('settings'), dockPosition: position };
-    if (position !== 'floating') {
-      const win = getMainWindow();
-      if (win) settings.dockThickness = thicknessFromBounds(position, win.getBounds());
-    }
     persist.set('settings', settings);
     await applyDockFromSettings();
     return settings;
@@ -256,7 +249,7 @@ export function registerIpcHandlers(): void {
   });
   ipcMain.handle(IPC.DOCK_SET_THICKNESS, async (_e, thickness: number) => {
     const t = clampThickness(Number(thickness));
-    const settings = { ...persist.get('settings'), dockThickness: t };
+    const settings = { ...persist.get('settings'), dockThickness: t, dockThicknessUserSet: true };
     persist.set('settings', settings);
     await applyDockFromSettings();
     return t;

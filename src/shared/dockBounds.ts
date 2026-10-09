@@ -14,16 +14,18 @@ export interface Rect {
 export const MIN_DOCK_THICKNESS = 140;
 /** Maximum strip size (px) */
 export const MAX_DOCK_THICKNESS = 720;
-export const DEFAULT_DOCK_THICKNESS = 420;
+export const DEFAULT_DOCK_THICKNESS = 210;
+/** Default before v1.1.7 (migrated to DEFAULT_DOCK_THICKNESS if never user-set). */
+export const LEGACY_DEFAULT_DOCK_THICKNESS = 420;
 
 /**
  * Below this thickness (width for L/R, height for T/B), rows show symbol + price only.
  */
-export const COMPACT_DOCK_THRESHOLD = 260;
+export const COMPACT_DOCK_THRESHOLD = 200;
 /**
  * Below this (and ≥ compact threshold), rows show symbol + price + change (no name/meta).
  */
-export const MEDIUM_DOCK_THRESHOLD = 340;
+export const MEDIUM_DOCK_THRESHOLD = 300;
 
 export type DockRowDensity = 'compact' | 'medium' | 'full';
 
@@ -609,4 +611,51 @@ export function edgeInsetPhysical(
     default:
       return 0;
   }
+}
+
+/**
+ * Thickness during an inner-edge drag, from SCREEN coordinates.
+ *
+ * Must use screenX/screenY, not clientX/clientY: for right/bottom docks the
+ * window's origin moves while it shrinks, so client coordinates shift under the
+ * pointer and the computed delta collapses → the dock "grows back" (v1.1.3–1.1.6 bug).
+ */
+export function computeDragThickness(
+  position: DockPosition,
+  startScreen: number,
+  currentScreen: number,
+  startThickness: number
+): number {
+  let delta = currentScreen - startScreen;
+  if (position === 'right' || position === 'bottom') delta = -delta;
+  return clampThickness(startThickness + delta);
+}
+
+/** Dock fields owned by the main process (renderer full-state saves must not overwrite them). */
+export const MAIN_OWNED_DOCK_KEYS = [
+  'dockPosition',
+  'dockThickness',
+  'reserveWorkArea',
+  'dockThicknessUserSet',
+  'settingsSchema',
+] as const;
+
+/**
+ * One-time migration: the old default (420) opened far too wide. If the user
+ * never changed the thickness, move to the new default; a user-set value stays.
+ */
+export function migrateDockSettings<
+  T extends { dockThickness?: number; dockThicknessUserSet?: boolean; settingsSchema?: number }
+>(settings: T): { settings: T & { settingsSchema: number }; changed: boolean } {
+  if ((settings.settingsSchema ?? 1) >= 2) {
+    return { settings: settings as T & { settingsSchema: number }, changed: false };
+  }
+  const next = { ...settings, settingsSchema: 2 } as T & { settingsSchema: number };
+  if (
+    !settings.dockThicknessUserSet &&
+    (settings.dockThickness == null || settings.dockThickness === LEGACY_DEFAULT_DOCK_THICKNESS)
+  ) {
+    next.dockThickness = DEFAULT_DOCK_THICKNESS;
+  }
+  return { settings: next, changed: true };
 }

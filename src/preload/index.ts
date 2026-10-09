@@ -25,6 +25,7 @@ const api = {
   setBounds: (bounds: object) => ipcRenderer.invoke(IPC.WINDOW_SET_BOUNDS, bounds),
 
   quit: () => ipcRenderer.invoke(IPC.APP_QUIT),
+  getVersion: () => ipcRenderer.invoke(IPC.APP_GET_VERSION) as Promise<string>,
   hide: () => ipcRenderer.invoke(IPC.APP_HIDE),
   show: () => ipcRenderer.invoke(IPC.APP_SHOW),
   setLoginItem: (open: boolean) =>

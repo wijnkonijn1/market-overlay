@@ -17,6 +17,7 @@ export const IPC = {
   APP_SET_LOGIN_ITEM: 'app:setLoginItem',
   APP_GET_LOGIN_ITEM: 'app:getLoginItem',
   APP_NOTIFY: 'app:notify',
+  APP_GET_VERSION: 'app:getVersion',
 
   STORE_GET: 'store:get',
   STORE_SET: 'store:set',

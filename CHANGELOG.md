@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.7 — 2026-10-09
+
+### Fixes
+- **Header showed "v1.1.3" in every build**: the badge was hardcoded. It now shows `app.getVersion()` (via the `app:getVersion` IPC / preload), so it always matches package.json.
+- **Dock grew back after shrinking**:
+  - Right/bottom docks: the drag handle used `clientX/clientY`. The window moves under the pointer while a right/bottom dock shrinks, so the delta collapsed and the dock bounced back toward its start size. Now uses `screenX/screenY` (`computeDragThickness`).
+  - The renderer's debounced full-state save (`store:setAll`, also fired on every quote refresh) could write a stale `dockThickness` back and re-apply it. Dock fields (`dockPosition`, `dockThickness`, `reserveWorkArea`) and window bounds are now owned by the main process; they only change through the `dock:*` IPC.
+  - `dock:set` no longer resets the thickness to the current (floating) window width.
+  - Reapply-on-move/resize is now a separate module (`dock/reapply.ts`), and it always re-applies the persisted thickness.
+- **Default dock thickness 420 → 210 px.** A one-time migration moves stored settings still at the old default (never user-changed) to 210. Values the user set are kept. Row-density thresholds moved to compact < 200 px and medium < 300 px, so 210 shows symbol + price + change.
+- **Clean upgrades on Windows** (`build/installer.nsh`):
+  - Before installing, the installer closes both `Market Overlay.exe` (≤ 1.1.3) and `MarketOverlay.exe`.
+  - It removes a leftover old-name exe and re-points existing desktop/Start-menu shortcuts at the current exe.
+  - On start, the app detects other running Market Overlay main processes (e.g. a pre-1.1.6 copy in the tray, or an old portable) and offers to close them.
+- Tests: an integration test (mocked Electron, Windows AppBar path) covers a drag shrink with a stale renderer save and OS events, then runs all timers. Also new: drag-math, migration and instance-detection tests.
+
 ## 1.1.6 — 2026-10-09
 
 ### Fixes

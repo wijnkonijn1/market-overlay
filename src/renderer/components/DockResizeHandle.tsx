@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
-import { clampThickness } from '../../shared/dockBounds';
+import { computeDragThickness } from '../../shared/dockBounds';
 import type { DockPosition } from '../../shared/types';
 
 function edgeClass(position: DockPosition): string {
@@ -39,7 +39,12 @@ export function DockResizeHandle() {
     useAppStore.setState((s) => ({
       settings: { ...s.settings, dockThickness: next },
     }));
-    void window.marketOverlay.setDockThickness(next);
+    void window.marketOverlay.setDockThickness(next).then((applied) => {
+      // Main is authoritative; adopt what it actually applied.
+      if (typeof applied === 'number' && applied !== next && pending.current === next) {
+        useAppStore.setState((s) => ({ settings: { ...s.settings, dockThickness: applied } }));
+      }
+    });
   }, []);
 
   const onPointerDown = useCallback(
@@ -49,7 +54,9 @@ export function DockResizeHandle() {
       e.stopPropagation();
       dragging.current = true;
       startRef.current = {
-        axis: position === 'left' || position === 'right' ? e.clientX : e.clientY,
+        // SCREEN coords: the window moves under the pointer while a right/bottom
+        // dock shrinks, so client coords would make the dock grow back.
+        axis: position === 'left' || position === 'right' ? e.screenX : e.screenY,
         thickness,
       };
       lastApplied.current = thickness;
@@ -63,10 +70,8 @@ export function DockResizeHandle() {
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!dragging.current || position === 'floating') return;
-      const cur = position === 'left' || position === 'right' ? e.clientX : e.clientY;
-      let delta = cur - startRef.current.axis;
-      if (position === 'right' || position === 'bottom') delta = -delta;
-      const next = clampThickness(startRef.current.thickness + delta);
+      const cur = position === 'left' || position === 'right' ? e.screenX : e.screenY;
+      const next = computeDragThickness(position, startRef.current.axis, cur, startRef.current.thickness);
       pending.current = next;
       // Optimistic UI update every move
       useAppStore.setState((s) => ({

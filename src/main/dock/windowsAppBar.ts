@@ -559,3 +559,8 @@ export function _resetWindowsAppBarStateForTests(): void {
   api = undefined;
   applyGeneration = 0;
 }
+
+/** Test helper: inject a fake shell32/user32 API (unit/integration tests only). */
+export function _setAppBarApiForTests(fake: AppBarApi | null): void {
+  api = fake;
+}

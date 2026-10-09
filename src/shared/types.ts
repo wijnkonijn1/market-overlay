@@ -119,6 +119,10 @@ export interface AppSettings {
   reserveWorkArea: boolean;
   /** Dock strip thickness in px (width for L/R, height for T/B) */
   dockThickness: number;
+  /** True once the user changed thickness (drag or slider). Used for default migration. */
+  dockThicknessUserSet?: boolean;
+  /** Settings schema marker for one-time migrations (2 = default thickness 210). */
+  settingsSchema?: number;
 }
 
 export interface PersistedState {
@@ -149,7 +153,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cryptoStreaming: true,
   dockPosition: 'floating',
   reserveWorkArea: true,
-  dockThickness: 420,
+  dockThickness: 210,
+  dockThicknessUserSet: false,
+  settingsSchema: 2,
 };
 
 export const DEFAULT_WINDOW: WindowState = {

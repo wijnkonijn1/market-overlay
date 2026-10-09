@@ -34,7 +34,7 @@ npm run dist:win       # → release/ NSIS Setup + Portable (verifies ffmpeg.dll
 | **Windows** | Yes | Yes — `SHAppBarMessage` AppBar via koffi when “Reserve screen space” is on (restored on undock/quit) |
 | **macOS** | Yes | **Not available** to third-party apps — Settings still offer the toggle but reservation is a no-op |
 
-Dock thickness (Settings slider or drag the inner edge) is 140–720px. Below 260px the strip auto-compacts to ticker + price only; work-area reservation updates with thickness.
+Dock thickness (Settings slider or drag the inner edge) is 140–720px. Default 210px. Below 200px the strip auto-compacts to ticker + price only; 200–299px adds change; 300px+ full rows. Work-area reservation always equals the dock thickness.
 
 ## Sharing builds
 - **Linux:** run the AppImage or install the `.deb` from `release/`  

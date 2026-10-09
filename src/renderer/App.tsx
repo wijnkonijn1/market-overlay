@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useCallback, useState } from 'react';
 import { useAppStore } from './store/appStore';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AddTickerModal } from './components/AddTickerModal';
@@ -8,6 +8,11 @@ import { refreshQuotes, scheduleRefresh } from './services/marketService';
 import { dockRowDensity } from '../shared/dockBounds';
 
 export function App() {
+  // Version comes from the main process (app.getVersion() = package.json), never hardcoded.
+  const [appVersion, setAppVersion] = useState<string>('');
+  useEffect(() => {
+    void window.marketOverlay?.getVersion?.().then((v) => setAppVersion(String(v || ''))).catch(() => {});
+  }, []);
   const hydrated = useAppStore((s) => s.hydrated);
   const hydrate = useAppStore((s) => s.hydrate);
   const watchlists = useAppStore((s) => s.watchlists);
@@ -132,7 +137,7 @@ export function App() {
       <DockResizeHandle />
       <div className="titlebar">
         <span>Market Overlay</span>
-        <span className="badge">v1.1.3</span>
+        {appVersion && <span className="badge" title="Installed version">v{appVersion}</span>}
         <div className="win-btns no-drag">
           <button type="button" className="icon-btn" title="Add (Ctrl+K)" onClick={() => setPanel('add')}>+</button>
           <button type="button" className="icon-btn" title="Refresh" onClick={onRefresh}>{refreshing ? '…' : '↻'}</button>

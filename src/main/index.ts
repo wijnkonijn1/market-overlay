@@ -21,8 +21,10 @@ import {
   applyAlwaysOnTop,
   applyOpacity,
 } from './windowState';
-import { get } from './store';
+import { get, migrateStore } from './store';
 import { clearDockReservation, isApplyingDock } from './dock/workAreaReserve';
+import { attachDockReapply } from './dock/reapply';
+import { warnAboutOtherInstances } from './otherInstances';
 import { IPC } from '../shared/ipc';
 
 if (process.platform === 'linux') {
@@ -125,26 +127,16 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  // Re-apply dock after display changes when docked.
-  // Skip while we are applying (setBounds would otherwise recurse and can
-  // fight user thickness via stale AppBar re-asserts). Debounce moved/resized
-  // so OS noise does not thrash; always re-apply TO persisted thickness.
-  let reapplyTimer: ReturnType<typeof setTimeout> | null = null;
-  const reapplyDock = (source: string) => {
-    if (isApplyingDock() || isDockApplyInProgress()) return;
-    const s = get('settings');
-    if (!s?.dockPosition || s.dockPosition === 'floating') return;
-    if (reapplyTimer) clearTimeout(reapplyTimer);
-    reapplyTimer = setTimeout(() => {
-      reapplyTimer = null;
-      if (isApplyingDock() || isDockApplyInProgress()) return;
-      console.debug('[dock] reapply from', source);
-      void applyDockFromSettings(win);
-    }, source === 'display-metrics-changed' ? 50 : 180);
-  };
-  win.on('moved', () => reapplyDock('moved'));
-  win.on('resized', () => reapplyDock('resized'));
-  screen.on('display-metrics-changed', () => reapplyDock('display-metrics-changed'));
+  // Re-apply dock (persisted thickness) after OS-driven moves/resizes/display changes.
+  attachDockReapply(win, screen, {
+    isApplying: () => isApplyingDock() || isDockApplyInProgress(),
+    isDocked: () => {
+      const s = get('settings');
+      return Boolean(s?.dockPosition && s.dockPosition !== 'floating');
+    },
+    apply: () => applyDockFromSettings(win),
+    log: (m) => console.debug(m),
+  });
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -191,10 +183,25 @@ function registerShortcuts(win: BrowserWindow): void {
 
 app.whenReady().then(() => {
   if (!gotSingleInstanceLock) return;
+  try {
+    migrateStore();
+  } catch (err) {
+    console.warn('[store] migration failed:', err);
+  }
   nativeTheme.themeSource = 'dark';
   registerIpcHandlers();
   const win = createWindow();
   createTray(getMainWindow);
+  // Pre-1.1.6 builds had no single-instance lock: an old copy (tray) keeps its
+  // own docked window + AppBar. Detect and offer to close it.
+  setTimeout(
+    () =>
+      void warnAboutOtherInstances(getMainWindow, () => {
+        // Old AppBar disappears with its window; re-assert ours.
+        setTimeout(() => void applyDockFromSettings(), 1000);
+      }),
+    3000
+  );
   registerShortcuts(win);
 
   const settings = get('settings');

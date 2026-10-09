@@ -101,7 +101,8 @@ describe('dockBounds', () => {
 
   it('dockRowDensity uses same thresholds for horizontal and vertical docks', () => {
     expect(dock.dockRowDensity('top', 180)).toBe('compact');
-    expect(dock.dockRowDensity('bottom', 300)).toBe('medium');
+    expect(dock.dockRowDensity('bottom', 250)).toBe('medium');
+    expect(dock.dockRowDensity('left', 250)).toBe('medium');
   });
 
   it('enforceAppBarUserThickness pins left strip after inflate', () => {
