@@ -379,3 +379,234 @@ export function computeReservedWorkArea(
       return null;
   }
 }
+
+/* ------------------------------------------------------------------------- */
+/* v1.1.6: reserve == actual dock window (single source of truth)            */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Thickness of a physical RECT along the dock axis
+ * (width for left/right, height for top/bottom).
+ */
+export function winRectThickness(rc: WinRect, position: DockPosition): number {
+  if (position === 'top' || position === 'bottom') return rc.bottom - rc.top;
+  return rc.right - rc.left;
+}
+
+/** Thickness of a DIP rect along the dock axis. */
+export function rectThickness(rect: Rect, position: DockPosition): number {
+  if (position === 'top' || position === 'bottom') return rect.height;
+  return rect.width;
+}
+
+/**
+ * Convert a window rect (DIP) to physical pixels for the display it is on.
+ *
+ * Mirrors Electron's per-display mapping on Windows:
+ *   physical = displayPhysicalOrigin + (dip - displayDipOrigin) * scale
+ * For the primary monitor (or single monitor) the origins are equal, so this is
+ * just `dip * scale`. The scale factor is applied exactly ONCE, and the far
+ * edge is derived from the rounded width/height so the physical thickness never
+ * drifts by a rounding pixel relative to the near edge.
+ */
+export function windowDipToPhysical(
+  windowDip: Rect,
+  scaleFactor: number,
+  displayDipOrigin: { x: number; y: number } = { x: 0, y: 0 },
+  displayPhysicalOrigin: { x: number; y: number } = displayDipOrigin
+): WinRect {
+  const s = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  const left = Math.round(displayPhysicalOrigin.x + (windowDip.x - displayDipOrigin.x) * s);
+  const top = Math.round(displayPhysicalOrigin.y + (windowDip.y - displayDipOrigin.y) * s);
+  return {
+    left,
+    top,
+    right: left + Math.round(windowDip.width * s),
+    bottom: top + Math.round(windowDip.height * s),
+  };
+}
+
+/**
+ * The AppBar reservation rect for a docked window: exactly the window's own
+ * physical rect. No re-derivation from display bounds or from the persisted
+ * setting — whatever the dock actually occupies is what gets reserved.
+ * Returns null for floating or an empty window rect.
+ */
+export function computeReserveRectFromWindow(
+  windowPhysical: WinRect,
+  position: DockPosition
+): WinRect | null {
+  if (position === 'floating') return null;
+  if (windowPhysical.right <= windowPhysical.left) return null;
+  if (windowPhysical.bottom <= windowPhysical.top) return null;
+  return { ...windowPhysical };
+}
+
+export interface DockReservePlan {
+  /** Dock window rect in DIP (what we setBounds to). */
+  dockDip: Rect;
+  /** Dock window rect in physical px. */
+  dockPhysical: WinRect;
+  /** Reserved AppBar rect in physical px (== dockPhysical). */
+  reservePhysical: WinRect;
+  /** Reserved thickness in physical px. */
+  reservePx: number;
+  /** Window thickness in physical px. */
+  windowPx: number;
+  scaleFactor: number;
+}
+
+/**
+ * Pure end-to-end plan used by tests and as a reference for the runtime path:
+ * display + thickness → dock rect (DIP) → physical (scale once) → reserve.
+ * `windowDipOverride` lets callers pass the window's *actual* getBounds() after
+ * setBounds (e.g. if the OS clamped it) — the reserve follows the actual window.
+ */
+export function planDockReserve(
+  displayBoundsDip: Rect,
+  position: DockPosition,
+  thickness: number,
+  scaleFactor: number,
+  windowDipOverride?: Rect,
+  displayPhysicalOrigin?: { x: number; y: number }
+): DockReservePlan | null {
+  const dockDip = windowDipOverride ?? computeDockBounds(displayBoundsDip, position, thickness);
+  if (!dockDip) return null;
+  const dockPhysical = windowDipToPhysical(
+    dockDip,
+    scaleFactor,
+    { x: displayBoundsDip.x, y: displayBoundsDip.y },
+    displayPhysicalOrigin ?? { x: displayBoundsDip.x, y: displayBoundsDip.y }
+  );
+  const reservePhysical = computeReserveRectFromWindow(dockPhysical, position);
+  if (!reservePhysical) return null;
+  return {
+    dockDip,
+    dockPhysical,
+    reservePhysical,
+    reservePx: winRectThickness(reservePhysical, position),
+    windowPx: winRectThickness(dockPhysical, position),
+    scaleFactor,
+  };
+}
+
+/** Debug line required for field diagnostics. */
+export function formatReserveLog(reservePx: number, windowPx: number, scale: number): string {
+  return `[dock] reserve=${reservePx} window=${windowPx} scale=${scale}`;
+}
+
+/**
+ * Reserved thickness (DIP) as observed from the display's work area after the
+ * shell applied our AppBar. Includes any other AppBar/taskbar on the same edge,
+ * so callers should compare against a baseline (work area without our AppBar).
+ */
+export function observedReserveFromWorkArea(
+  displayBoundsDip: Rect,
+  workAreaDip: Rect,
+  position: DockPosition
+): number {
+  switch (position) {
+    case 'left':
+      return workAreaDip.x - displayBoundsDip.x;
+    case 'right':
+      return displayBoundsDip.x + displayBoundsDip.width - (workAreaDip.x + workAreaDip.width);
+    case 'top':
+      return workAreaDip.y - displayBoundsDip.y;
+    case 'bottom':
+      return displayBoundsDip.y + displayBoundsDip.height - (workAreaDip.y + workAreaDip.height);
+    default:
+      return 0;
+  }
+}
+
+/**
+ * If the shell reserved more than the window (observed / expected ≈ k), return a
+ * physical rect whose thickness is divided by k so the effective reservation
+ * equals the window. Only corrects a consistent scale-like ratio (>= 1.1) —
+ * that is the signature of the rect being DPI-scaled a second time
+ * (DPI virtualization). Returns null if no correction is warranted.
+ */
+export function correctOverReservedRect(
+  reservePhysical: WinRect,
+  position: DockPosition,
+  expectedDip: number,
+  observedDip: number
+): WinRect | null {
+  if (!(expectedDip > 0) || !(observedDip > 0)) return null;
+  const ratio = observedDip / expectedDip;
+  if (ratio < 1.1 || ratio > 4.5) return null;
+  const t = winRectThickness(reservePhysical, position);
+  const nt = Math.max(1, Math.round(t / ratio));
+  switch (position) {
+    case 'left':
+      return { ...reservePhysical, right: reservePhysical.left + nt };
+    case 'right':
+      return { ...reservePhysical, left: reservePhysical.right - nt };
+    case 'top':
+      return { ...reservePhysical, bottom: reservePhysical.top + nt };
+    case 'bottom':
+      return { ...reservePhysical, top: reservePhysical.bottom - nt };
+    default:
+      return null;
+  }
+}
+
+/**
+ * X11 strut from the actual window rect (DIP) on the root window (union of all
+ * displays, DIP). X11 struts are in physical root-window pixels and measured
+ * from the root edges, so right/bottom are root edge minus the window's inner
+ * edge (correct on multi-monitor layouts too). Scale applied once.
+ */
+export function computeStrutFromWindow(
+  windowDip: Rect,
+  rootDip: Rect,
+  position: DockPosition,
+  scaleFactor: number
+): StrutPartial | null {
+  if (position === 'floating') return null;
+  const s = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  const w = windowDipToPhysical(windowDip, s);
+  const root = windowDipToPhysical(rootDip, s);
+  const empty: StrutPartial = {
+    left: 0, right: 0, top: 0, bottom: 0,
+    left_start_y: 0, left_end_y: 0,
+    right_start_y: 0, right_end_y: 0,
+    top_start_x: 0, top_end_x: 0,
+    bottom_start_x: 0, bottom_end_x: 0,
+  };
+  switch (position) {
+    case 'left':
+      return { ...empty, left: w.right - root.left, left_start_y: w.top, left_end_y: w.bottom - 1 };
+    case 'right':
+      return { ...empty, right: root.right - w.left, right_start_y: w.top, right_end_y: w.bottom - 1 };
+    case 'top':
+      return { ...empty, top: w.bottom - root.top, top_start_x: w.left, top_end_x: w.right - 1 };
+    case 'bottom':
+      return { ...empty, bottom: root.bottom - w.top, bottom_start_x: w.left, bottom_end_x: w.right - 1 };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Physical px the work area is inset from the monitor on the dock edge
+ * (Win32 rcMonitor vs rcWork). Includes the taskbar if it shares the edge.
+ */
+export function edgeInsetPhysical(
+  monitor: WinRect,
+  work: WinRect,
+  position: DockPosition
+): number {
+  switch (position) {
+    case 'left':
+      return work.left - monitor.left;
+    case 'right':
+      return monitor.right - work.right;
+    case 'top':
+      return work.top - monitor.top;
+    case 'bottom':
+      return monitor.bottom - work.bottom;
+    default:
+      return 0;
+  }
+}

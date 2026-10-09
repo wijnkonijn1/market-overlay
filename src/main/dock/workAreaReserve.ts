@@ -18,11 +18,15 @@ import { screen, type BrowserWindow } from 'electron';
 import type { DockPosition } from '../../shared/types';
 import {
   computeDockBounds,
-  computeStrutPartial,
+  computeStrutFromWindow,
   platformDockSupport,
   clampThickness,
   dockMinimumWindowSize,
+  formatReserveLog,
+  rectThickness,
+  windowDipToPhysical,
   type Rect,
+  type WinRect,
 } from '../../shared/dockBounds';
 import {
   registerWindowsAppBar,
@@ -99,14 +103,35 @@ async function clearLinuxStrut(win: BrowserWindow): Promise<void> {
   }
 }
 
+/** Union of all display bounds (DIP) = X11 root window. */
+function rootBoundsDip(fallback: Rect): Rect {
+  try {
+    const ds = screen.getAllDisplays();
+    if (!ds.length) return fallback;
+    const x0 = Math.min(...ds.map((d) => d.bounds.x));
+    const y0 = Math.min(...ds.map((d) => d.bounds.y));
+    const x1 = Math.max(...ds.map((d) => d.bounds.x + d.bounds.width));
+    const y1 = Math.max(...ds.map((d) => d.bounds.y + d.bounds.height));
+    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  } catch {
+    return fallback;
+  }
+}
+
 async function applyLinuxStrut(
   win: BrowserWindow,
   displayBounds: Rect,
   position: DockPosition,
-  thickness: number
+  scaleFactor: number
 ): Promise<{ ok: boolean; detail: string }> {
-  const strut = computeStrutPartial(displayBounds, position, thickness);
+  // Same rule as Windows: strut is derived from the window's ACTUAL bounds.
+  const windowDip = win.getBounds();
+  const strut = computeStrutFromWindow(windowDip, rootBoundsDip(displayBounds), position, scaleFactor);
   if (!strut) return { ok: false, detail: 'no strut for floating' };
+  const strutPx =
+    position === 'left' ? strut.left : position === 'right' ? strut.right : position === 'top' ? strut.top : strut.bottom;
+  const windowPx = Math.round(rectThickness(windowDip, position) * scaleFactor);
+  console.log(`${formatReserveLog(strutPx, windowPx, scaleFactor)} (linux strut, from root edge)`);
   const xid = getNativeWindowId(win);
   if (!xid) return { ok: false, detail: 'no X11 window id (Wayland?)' };
 
@@ -179,7 +204,8 @@ export async function applyDock(
   position: DockPosition,
   thickness: number,
   reserveWorkArea: boolean,
-  scaleFactor?: number
+  /** Optional cached scale factor (resolved from the display otherwise). */
+  scaleFactorHint?: number
 ): Promise<DockApplyResult> {
   beginApplyingDock();
   try {
@@ -190,17 +216,15 @@ export async function applyDock(
     const t = clampThickness(thickness);
     applyDockMinimumSize(win, position);
     const bounds = computeDockBounds(displayBounds, position, t);
-
-    // Cache scale factor or resolve once
-    const sf = scaleFactor ?? resolveScaleFactor(win, displayBounds);
+    const sf = scaleFactorHint ?? resolveScaleFactor(win, displayBounds);
 
     // Exact user dock rect first — before AppBar — so Electron is not fighting a strut.
     if (bounds && !win.isDestroyed()) {
       win.setBounds({
-        x: Math.floor(bounds.x),
-        y: Math.floor(bounds.y),
-        width: Math.floor(bounds.width),
-        height: Math.floor(bounds.height),
+        x: Math.round(bounds.x),
+        y: Math.round(bounds.y),
+        width: Math.round(bounds.width),
+        height: Math.round(bounds.height),
       });
     }
 
@@ -229,7 +253,7 @@ export async function applyDock(
     }
 
     if (process.platform === 'linux') {
-      const result = await applyLinuxStrut(win, displayBounds, position, t);
+      const result = await applyLinuxStrut(win, displayBounds, position, sf);
       return {
         position,
         bounds,
@@ -240,7 +264,20 @@ export async function applyDock(
     }
 
     if (process.platform === 'win32') {
-      const result = registerWindowsAppBar(win, displayBounds, position, t, sf);
+      const scaleFactor = sf;
+      const toPhysical = (dip: Rect): WinRect => {
+        try {
+          // Electron's own per-display DIP→screen mapping (scale applied once).
+          const r = screen.dipToScreenRect(win, dip);
+          return { left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height };
+        } catch {
+          return windowDipToPhysical(dip, scaleFactor, { x: displayBounds.x, y: displayBounds.y });
+        }
+      };
+      const result = registerWindowsAppBar(win, displayBounds, position, t, {
+        toPhysical,
+        scaleFactor,
+      });
       // approvedRectDip is always the user-thickness rect (never QUERYPOS-expanded)
       const finalBounds = result.approvedRectDip ?? bounds;
       return {

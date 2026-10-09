@@ -29,6 +29,22 @@ if (process.platform === 'linux') {
   app.disableHardwareAcceleration();
 }
 
+// One overlay process only: two instances would each register an AppBar and
+// the reserved work area would stack (much larger than the visible dock).
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const w = getMainWindow();
+    if (w && !w.isDestroyed()) {
+      if (w.isMinimized()) w.restore();
+      w.show();
+      w.focus();
+    }
+  });
+}
+
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
 function resolveIcon(): string | undefined {
@@ -174,6 +190,7 @@ function registerShortcuts(win: BrowserWindow): void {
 }
 
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return;
   nativeTheme.themeSource = 'dark';
   registerIpcHandlers();
   const win = createWindow();

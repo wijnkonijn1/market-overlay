@@ -40,3 +40,24 @@ sequences so a shrink cannot be overwritten by an in-flight larger apply.
    maximized windows must stop at the new edge.
 3. Settings slider down then up — same stickiness; no bounce after ~150ms.
 4. Switch to Floating — work area restores; quit while docked — work area restores.
+
+
+## v1.1.6: reserve == actual window
+
+The reservation is no longer computed from the persisted thickness and display
+bounds. After `setBounds`, the AppBar rect is the window's own OS rect
+(`GetWindowRect`), falling back to `screen.dipToScreenRect(win, win.getBounds())`.
+Both are already physical pixels in the calling thread's DPI context, so the
+scale factor is never applied twice and secondary monitors with a different DPI
+map correctly. `ABM_SETPOS` always receives exactly that rect.
+
+About 0.4s and 1.2s after each apply, `GetMonitorInfoW` is used to read the real
+work area. The inset on the dock edge minus a baseline (captured before
+`ABM_NEW`, e.g. a taskbar on the same edge) must equal the window thickness.
+Log lines:
+
+    [dock] reserve=<px> window=<px> scale=<s> dip=<dip> src=GetWindowRect
+    [dock] verify reserve=<px> window=<px> scale=<s> baseline=<px>
+
+If both samples agree and the shell reserved >= 1.1x the window, the ratio is
+stored and later rects are divided by it (`corrected over-reservation`).

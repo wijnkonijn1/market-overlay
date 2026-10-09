@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.6 — 2026-10-09
+
+### Fixes
+- **Reserved screen space now always equals the dock's actual width/height** (Windows AppBar + Linux strut):
+  - The AppBar rect is taken from the dock window's **actual** OS rect (`GetWindowRect`, same coordinate space as `SHAppBarMessage`), after `setBounds`. Fallback: `screen.dipToScreenRect(getBounds())` — scale applied exactly once. No more re-deriving from display bounds × scaleFactor (wrong on secondary/mixed-DPI monitors).
+  - `ABM_SETPOS` always gets exactly the window rect (shell QUERYPOS adjustments ignored); deferred re-assert re-measures the window and re-reserves.
+  - Changing dock edge removes the old AppBar before registering the new one.
+  - Post-SETPOS verification reads the real work area (`GetMonitorInfoW`, minus taskbar baseline). If the shell consistently reserves a scale-like multiple more than the window (DPI virtualization), the ratio is learned and the reservation corrected so the effective reserve equals the dock.
+  - Single-instance lock: a second Market Overlay process (e.g. installed + portable) can no longer register a second AppBar that stacks the reservation.
+  - Linux strut derived from the actual window rect, measured from the X root edges (correct for right/bottom on multi-monitor).
+  - Debug log: `[dock] reserve=<px> window=<px> scale=<s>` and `[dock] verify reserve=<px> window=<px> …`.
+- Tests: reserve == dock at 100/125/150/200% × 140/260/420 for all edges, shrink → reserve shrinks, fake-shell AppBar path (QUERYPOS inflation, slider, edge change, taskbar baseline, DPI-virtualization correction), mixed-DPI secondary monitor, Linux strut.
+
 ## 1.1.5 — 2026-09-28
 
 ### Fixes
