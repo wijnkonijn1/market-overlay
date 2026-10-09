@@ -12,6 +12,9 @@ import {
   getMainWindow,
   applyDockFromSettings,
   isDockApplyInProgress,
+  requestDockThickness,
+  stepDockThickness,
+  openDockLogFolder,
   syncCryptoStreamFromState,
 } from './ipc';
 import { createTray } from './tray';
@@ -24,6 +27,8 @@ import {
 import { get, migrateStore } from './store';
 import { clearDockReservation, isApplyingDock } from './dock/workAreaReserve';
 import { attachDockReapply } from './dock/reapply';
+import { dockLog, getDockLogPath } from './dock/dockLog';
+import { rebuildTrayMenu } from './tray';
 import { warnAboutOtherInstances } from './otherInstances';
 import { IPC } from '../shared/ipc';
 
@@ -46,6 +51,9 @@ if (!gotSingleInstanceLock) {
     }
   });
 }
+
+/** Step for tray / keyboard / +- buttons. */
+const DOCK_STEP = 10;
 
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
@@ -135,7 +143,15 @@ function createWindow(): BrowserWindow {
       return Boolean(s?.dockPosition && s.dockPosition !== 'floating');
     },
     apply: () => applyDockFromSettings(win),
-    log: (m) => console.debug(m),
+    measure: () => {
+      const s = get('settings');
+      if (!s?.dockPosition || s.dockPosition === 'floating' || win.isDestroyed()) return null;
+      const b = win.getBounds();
+      const actual = s.dockPosition === 'top' || s.dockPosition === 'bottom' ? b.height : b.width;
+      return { persisted: s.dockThickness, actual };
+    },
+    adopt: (t, source) => requestDockThickness(t, source).then(() => undefined),
+    log: (tag, m) => dockLog(tag, m),
   });
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
@@ -168,10 +184,30 @@ function registerShortcuts(win: BrowserWindow): void {
     } else if (ctrl && input.key === ',') {
       event.preventDefault();
       send('settings');
+    } else if (input.control && input.alt && (input.key === '[' || input.code === 'BracketLeft')) {
+      event.preventDefault();
+      void stepDockThickness(-DOCK_STEP, 'shortcut-local').then(rebuildTrayMenu);
+    } else if (input.control && input.alt && (input.key === ']' || input.code === 'BracketRight')) {
+      event.preventDefault();
+      void stepDockThickness(DOCK_STEP, 'shortcut-local').then(rebuildTrayMenu);
     } else if (input.key === 'Escape') {
       send('escape');
     }
   });
+  for (const [acc, delta] of [
+    ['CommandOrControl+Alt+[', -DOCK_STEP],
+    ['CommandOrControl+Alt+]', DOCK_STEP],
+  ] as const) {
+    try {
+      const ok = globalShortcut.register(acc, () => {
+        if (get('settings')?.dockPosition === 'floating') return;
+        void stepDockThickness(delta, 'shortcut-global').then(rebuildTrayMenu);
+      });
+      dockLog('startup', `global shortcut ${acc} ${ok ? 'registered' : 'NOT registered (in use?)'}`);
+    } catch (err) {
+      dockLog('startup', `global shortcut ${acc} failed: ${String(err)}`);
+    }
+  }
   try {
     globalShortcut.register('CommandOrControl+Shift+K', () => {
       const w = getMainWindow();
@@ -191,7 +227,12 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
   registerIpcHandlers();
   const win = createWindow();
-  createTray(getMainWindow);
+  createTray(getMainWindow, {
+    dockSmaller: () => void stepDockThickness(-DOCK_STEP, 'tray').then(rebuildTrayMenu),
+    dockLarger: () => void stepDockThickness(DOCK_STEP, 'tray').then(rebuildTrayMenu),
+    openLogFolder: () => void openDockLogFolder(),
+  });
+  dockLog('startup', `Market Overlay ${app.getVersion()} platform=${process.platform} log=${getDockLogPath()}`);
   // Pre-1.1.6 builds had no single-instance lock: an old copy (tray) keeps its
   // own docked window + AppBar. Detect and offer to close it.
   setTimeout(

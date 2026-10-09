@@ -73,11 +73,18 @@ class FakeWin extends EventEmitter {
     setTimeout(() => { this.emit('resize'); this.emit('resized'); this.emit('move'); this.emit('moved'); }, 5);
   }
   setMinimumSize(w: number) { this.minW = w; }
+  getMinimumSize() { return [this.minW, 0]; }
+  isMaximized() { return false; }
+  isResizable() { return true; }
   getNativeWindowHandle() { const b = Buffer.alloc(8); b.writeBigUInt64LE(0xabcn); return b; }
   webContents = { send: () => {} };
 }
 
 let setposLog: { left: number; top: number; right: number; bottom: number }[] = [];
+import os from 'os';
+import fs from 'fs';
+import path from 'path';
+const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mo-docklog-'));
 
 describe('dock shrink end-to-end (Windows path, mocked Electron)', () => {
   const realPlatform = process.platform;
@@ -104,8 +111,13 @@ describe('dock shrink end-to-end (Windows path, mocked Electron)', () => {
       },
       getWindowRect: () => {
         const b = win.getBounds();
-        const l = Math.round(b.x * SCALE), t = Math.round(b.y * SCALE);
-        return { left: l, top: t, right: l + Math.round(b.width * SCALE), bottom: t + Math.round(b.height * SCALE) };
+        // Edge-based like Windows' DIP→physical mapping (window edges, not size)
+        return {
+          left: Math.round(b.x * SCALE),
+          top: Math.round(b.y * SCALE),
+          right: Math.round((b.x + b.width) * SCALE),
+          bottom: Math.round((b.y + b.height) * SCALE),
+        };
       },
     });
     persist = await import('../src/main/store');
@@ -114,10 +126,20 @@ describe('dock shrink end-to-end (Windows path, mocked Electron)', () => {
     const { isApplyingDock } = await import('../src/main/dock/workAreaReserve');
     ipc.registerIpcHandlers();
     ipc.setMainWindow(win as never);
+    const logMod = await import('../src/main/dock/dockLog');
+    logMod._setDockLogDirForTests(logDir);
     attachDockReapply(win, screenEmitter, {
       isApplying: () => isApplyingDock(),
       isDocked: () => persist.get('settings').dockPosition !== 'floating',
       apply: () => ipc.applyDockFromSettings(win as never),
+      measure: () => {
+        const st = persist.get('settings');
+        if (st.dockPosition === 'floating') return null;
+        const b = win.getBounds();
+        return { persisted: st.dockThickness, actual: st.dockPosition === 'top' || st.dockPosition === 'bottom' ? b.height : b.width };
+      },
+      adopt: (t, src) => ipc.requestDockThickness(t, src).then(() => undefined),
+      log: (tag, m) => logMod.dockLog(tag, m),
     });
   });
 
@@ -168,6 +190,9 @@ describe('dock shrink end-to-end (Windows path, mocked Electron)', () => {
 
       expect(persist.get('settings').dockThickness).toBe(180);
       expect(persist.get('settings').dockThicknessUserSet).toBe(true);
+      // Overlapping applies must not leave the "applying" guard stuck (v1.1.7 leak)
+      const { isApplyingDock } = await import('../src/main/dock/workAreaReserve');
+      expect(isApplyingDock()).toBe(false);
       expect(win.getBounds().width).toBe(180);
       const last = setposLog[setposLog.length - 1];
       expect(last.right - last.left).toBe(Math.round(180 * SCALE)); // reserve == dock
@@ -177,6 +202,69 @@ describe('dock shrink end-to-end (Windows path, mocked Electron)', () => {
       expect(after.every((r) => r.right - r.left === 225)).toBe(true);
     });
   }
+
+  it('RIGHT dock: Windows native left-edge resize (renderer never sees the pointer) is adopted, not reverted', async () => {
+    await call(IPC.DOCK_SET_THICKNESS, 210);
+    const d = call(IPC.DOCK_SET, 'right');
+    await vi.runAllTimersAsync();
+    await d;
+    expect(win.getBounds()).toMatchObject({ x: DISPLAY.width - 210, width: 210 });
+
+    // User grabs the native resize border on the window's LEFT edge and drags right.
+    win.emit('will-resize', {}, { x: DISPLAY.width - 180, y: 0, width: 180, height: DISPLAY.height }, { edge: 'left' });
+    for (const w of [200, 190, 175, 160, 150]) {
+      win.bounds = { x: DISPLAY.width - w, y: 0, width: w, height: DISPLAY.height };
+      win.emit('will-resize', {}, win.bounds, { edge: 'left' });
+      win.emit('moved'); // x changes during a left-edge resize
+      await vi.advanceTimersByTimeAsync(250); // user pauses mid-drag: must NOT snap back
+      expect(win.getBounds().width).toBe(w);
+    }
+    win.emit('resized');
+    await vi.runAllTimersAsync();
+
+    expect(persist.get('settings').dockThickness).toBe(150);
+    expect(win.getBounds()).toMatchObject({ x: DISPLAY.width - 150, width: 150 });
+    const last = setposLog[setposLog.length - 1];
+    expect(last.right).toBe(Math.round(DISPLAY.width * SCALE));
+    // left = screenRight - newWidth (±1px DIP→physical rounding)
+    expect(Math.abs(last.left - (Math.round(DISPLAY.width * SCALE) - Math.round(150 * SCALE)))).toBeLessThanOrEqual(1);
+    const log = fs.readFileSync(path.join(logDir, 'dock.log'), 'utf8');
+    expect(log).toMatch(/\[native\] user native resize started \(edge=left\)/);
+    expect(log).toMatch(/adopt as user resize/);
+    expect(log).toMatch(/\[request\] source=native:resized requested=150/);
+    expect(log).toMatch(/\[appbar\].*SETPOS sent=/);
+  });
+
+  it('right dock: drag handle / buttons path shrinks and moves x; log records request + setBounds', async () => {
+    const d = call(IPC.DOCK_SET, 'right');
+    await vi.runAllTimersAsync();
+    await d;
+    for (let i = 0; i < 4; i++) {
+      const p = ipc.stepDockThickness(-10, 'test-button');
+      await vi.runAllTimersAsync();
+      await p;
+    }
+    expect(persist.get('settings').dockThickness).toBe(170);
+    expect(win.getBounds()).toMatchObject({ x: DISPLAY.width - 170, width: 170 });
+    const log = fs.readFileSync(path.join(logDir, 'dock.log'), 'utf8');
+    expect(log).toMatch(/\[setBounds\] requested=\{"x":1366,"y":0,"width":170/);
+  });
+
+  it('setBounds clamped by a minimum size → logged MISMATCH and retried with min size dropped', async () => {
+    const d = call(IPC.DOCK_SET, 'left');
+    await vi.runAllTimersAsync();
+    await d;
+    const w0 = win;
+    w0.setMinimumSize = (w: number) => { w0.minW = w === 1 ? 1 : 300; }; // simulate a sticky OS min
+    win.minW = 300;
+    const p = call(IPC.DOCK_SET_THICKNESS, 160);
+    await vi.runAllTimersAsync();
+    await p;
+    const log = fs.readFileSync(path.join(logDir, 'dock.log'), 'utf8');
+    expect(log).toMatch(/MISMATCH/);
+    expect(log).toMatch(/retry: minimumSize was 300x0/);
+    expect(log).toMatch(/retry got=\{"x":0,"y":0,"width":160/);
+  });
 
   it('renderer full-state save cannot change dock fields or window state', async () => {
     await call(IPC.DOCK_SET_THICKNESS, 260);

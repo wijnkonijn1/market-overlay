@@ -39,7 +39,7 @@ export function DockResizeHandle() {
     useAppStore.setState((s) => ({
       settings: { ...s.settings, dockThickness: next },
     }));
-    void window.marketOverlay.setDockThickness(next).then((applied) => {
+    void window.marketOverlay.setDockThickness(next, 'drag').then((applied) => {
       // Main is authoritative; adopt what it actually applied.
       if (typeof applied === 'number' && applied !== next && pending.current === next) {
         useAppStore.setState((s) => ({ settings: { ...s.settings, dockThickness: applied } }));
@@ -61,7 +61,14 @@ export function DockResizeHandle() {
       };
       lastApplied.current = thickness;
       pending.current = thickness;
-      e.currentTarget.setPointerCapture(e.pointerId);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture unsupported — moves still arrive while over the handle */
+      }
+      window.marketOverlay.dockUiLog?.(
+        `drag start position=${position} thickness=${thickness} screen=${e.screenX},${e.screenY} client=${e.clientX},${e.clientY} dpr=${window.devicePixelRatio}`
+      );
       document.body.classList.add('dock-resizing');
     },
     [position, thickness]
@@ -89,6 +96,7 @@ export function DockResizeHandle() {
       if (!dragging.current) return;
       dragging.current = false;
       document.body.classList.remove('dock-resizing');
+      window.marketOverlay.dockUiLog?.(`drag end pending=${pending.current} lastApplied=${lastApplied.current}`);
       if (raf.current != null) {
         window.cancelAnimationFrame(raf.current);
         raf.current = null;

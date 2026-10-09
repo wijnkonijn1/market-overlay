@@ -13,6 +13,7 @@
  * 4. Register AppBar / strut to the same rect (Windows never expands past user size).
  */
 import { execFile } from 'child_process';
+import { dockLog } from './dockLog';
 import { promisify } from 'util';
 import { screen, type BrowserWindow } from 'electron';
 import type { DockPosition } from '../../shared/types';
@@ -48,14 +49,22 @@ export function isApplyingDock(): boolean {
 function beginApplyingDock(): void {
   applyingDockDepth += 1;
   if (applyingDockClearTimer) {
+    // The cancelled timer owned one pending decrement — release it now.
+    // (Before v1.1.8 this leaked +1 per overlapping apply, leaving
+    // isApplyingDock() stuck at true and the reapply listeners disabled.)
     clearTimeout(applyingDockClearTimer);
     applyingDockClearTimer = null;
+    applyingDockDepth = Math.max(0, applyingDockDepth - 1);
   }
 }
 
 function endApplyingDock(): void {
   // Keep the flag set briefly so Electron 'resized'/'moved' from our setBounds
   // do not immediately re-enter applyDock and fight the user thickness.
+  if (applyingDockClearTimer) {
+    clearTimeout(applyingDockClearTimer);
+    applyingDockDepth = Math.max(0, applyingDockDepth - 1);
+  }
   applyingDockClearTimer = setTimeout(() => {
     applyingDockClearTimer = null;
     applyingDockDepth = Math.max(0, applyingDockDepth - 1);
@@ -131,7 +140,7 @@ async function applyLinuxStrut(
   const strutPx =
     position === 'left' ? strut.left : position === 'right' ? strut.right : position === 'top' ? strut.top : strut.bottom;
   const windowPx = Math.round(rectThickness(windowDip, position) * scaleFactor);
-  console.log(`${formatReserveLog(strutPx, windowPx, scaleFactor)} (linux strut, from root edge)`);
+  dockLog("strut", `${formatReserveLog(strutPx, windowPx, scaleFactor)} (linux strut, from root edge)`);
   const xid = getNativeWindowId(win);
   if (!xid) return { ok: false, detail: 'no X11 window id (Wayland?)' };
 
@@ -186,6 +195,48 @@ function resolveScaleFactor(win: BrowserWindow, displayBounds: Rect): number {
   return 1;
 }
 
+/**
+ * setBounds, then read getBounds back. If Windows/Electron did not apply the
+ * requested rect (min size, maximized state, OS clamp), log it, drop the
+ * minimum size and retry once. Everything is logged to dock.log.
+ */
+export function setBoundsVerified(win: BrowserWindow, rect: Rect, position: DockPosition): Rect {
+  const want = {
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.max(1, Math.round(rect.width)),
+    height: Math.max(1, Math.round(rect.height)),
+  };
+  if (win.isDestroyed()) return want;
+  try {
+    if (win.isMaximized?.()) {
+      dockLog('setBounds', 'window was maximized — unmaximize before docking');
+      win.unmaximize();
+    }
+    if (win.isFullScreen?.()) win.setFullScreen(false);
+  } catch { /* best-effort */ }
+  win.setBounds(want);
+  let got = win.getBounds();
+  const off = (a: Rect, b: Rect) =>
+    Math.abs(a.x - b.x) > 1 || Math.abs(a.y - b.y) > 1 || Math.abs(a.width - b.width) > 1 || Math.abs(a.height - b.height) > 1;
+  dockLog('setBounds', `requested=${JSON.stringify(want)} got=${JSON.stringify(got)}${off(want, got) ? ' MISMATCH' : ''}`);
+  if (off(want, got)) {
+    try {
+      const [mw, mh] = win.getMinimumSize?.() ?? [0, 0];
+      dockLog('setBounds', `retry: minimumSize was ${mw}x${mh}, resizable=${win.isResizable?.()}`);
+      win.setMinimumSize(1, 1);
+      win.setBounds(want);
+      got = win.getBounds();
+      const { minWidth, minHeight } = dockMinimumWindowSize(position);
+      win.setMinimumSize(Math.min(minWidth, want.width), Math.min(minHeight, want.height));
+      dockLog('setBounds', `retry got=${JSON.stringify(got)}${off(want, got) ? ' STILL MISMATCH' : ' ok'}`);
+    } catch (err) {
+      dockLog('setBounds', `retry failed: ${String(err)}`);
+    }
+  }
+  return got;
+}
+
 function applyDockMinimumSize(win: BrowserWindow, position: DockPosition): void {
   if (win.isDestroyed()) return;
   const { minWidth, minHeight } = dockMinimumWindowSize(position);
@@ -218,14 +269,10 @@ export async function applyDock(
     const bounds = computeDockBounds(displayBounds, position, t);
     const sf = scaleFactorHint ?? resolveScaleFactor(win, displayBounds);
 
+    dockLog('apply', `position=${position} thickness=${t} reserve=${reserveWorkArea} display=${JSON.stringify(displayBounds)} scale=${sf}`);
     // Exact user dock rect first — before AppBar — so Electron is not fighting a strut.
     if (bounds && !win.isDestroyed()) {
-      win.setBounds({
-        x: Math.round(bounds.x),
-        y: Math.round(bounds.y),
-        width: Math.round(bounds.width),
-        height: Math.round(bounds.height),
-      });
+      setBoundsVerified(win, bounds, position);
     }
 
     if (position === 'floating' || !reserveWorkArea) {
@@ -277,7 +324,9 @@ export async function applyDock(
       const result = registerWindowsAppBar(win, displayBounds, position, t, {
         toPhysical,
         scaleFactor,
+        log: (line) => dockLog('appbar', line),
       });
+      dockLog('appbar', result.detail);
       // approvedRectDip is always the user-thickness rect (never QUERYPOS-expanded)
       const finalBounds = result.approvedRectDip ?? bounds;
       return {

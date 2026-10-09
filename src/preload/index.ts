@@ -56,8 +56,8 @@ const api = {
   setDock: (position: DockPosition) => ipcRenderer.invoke(IPC.DOCK_SET, position),
   getDock: () => ipcRenderer.invoke(IPC.DOCK_GET) as Promise<DockState>,
   setDockReserve: (reserve: boolean) => ipcRenderer.invoke(IPC.DOCK_RESERVE, reserve),
-  setDockThickness: (thickness: number) =>
-    ipcRenderer.invoke(IPC.DOCK_SET_THICKNESS, thickness) as Promise<number>,
+  setDockThickness: (thickness: number, source?: string) =>
+    ipcRenderer.invoke(IPC.DOCK_SET_THICKNESS, thickness, source) as Promise<number>,
 
   onShortcut: (cb: (action: ShortcutAction) => void) => {
     const handler = (_: Electron.IpcRendererEvent, action: ShortcutAction) => cb(action);
@@ -74,6 +74,13 @@ const api = {
     ipcRenderer.on(IPC.EVENT_QUOTE_UPDATE, handler);
     return () => ipcRenderer.removeListener(IPC.EVENT_QUOTE_UPDATE, handler);
   },
+  onDockChanged: (cb: (d: { thickness: number; position: DockPosition }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, d: { thickness: number; position: DockPosition }) => cb(d);
+    ipcRenderer.on(IPC.EVENT_DOCK_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC.EVENT_DOCK_CHANGED, handler);
+  },
+  dockUiLog: (msg: string) => ipcRenderer.send(IPC.DOCK_UI_LOG, String(msg).slice(0, 500)),
+  openLogFolder: () => ipcRenderer.invoke(IPC.APP_OPEN_LOG_FOLDER) as Promise<string | null>,
   onStateReload: (cb: () => void) => {
     const handler = () => cb();
     ipcRenderer.on(IPC.EVENT_STATE_RELOAD, handler);

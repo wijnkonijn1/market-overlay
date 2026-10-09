@@ -70,6 +70,14 @@ export function App() {
     });
     const unsubQuote = api.onQuoteUpdate((u) => applyQuotePartial(u));
     const unsubStream = api.onCryptoStreamStatus((s) => setCryptoStream(s));
+    // Main applied a thickness (tray, shortcut, native resize, other UI): mirror it.
+    const unsubDock = api.onDockChanged?.((d) => {
+      useAppStore.setState((s) =>
+        s.settings.dockThickness === d.thickness
+          ? s
+          : { settings: { ...s.settings, dockThickness: d.thickness } }
+      );
+    });
     const unsubReload = api.onStateReload(() => {
       void api.getState().then((state) => {
         hydrate(state);
@@ -81,6 +89,7 @@ export function App() {
       unsubTray();
       unsubQuote();
       unsubStream();
+      unsubDock?.();
       unsubReload();
     };
   }, []);

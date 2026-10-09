@@ -29,7 +29,13 @@ function loadTrayIcon(): Electron.NativeImage {
   return nativeImage.createEmpty();
 }
 
-export function createTray(getMainWindow: () => BrowserWindow | null): Tray {
+export interface TrayDockActions {
+  dockSmaller: () => void;
+  dockLarger: () => void;
+  openLogFolder: () => void;
+}
+
+export function createTray(getMainWindow: () => BrowserWindow | null, dock?: TrayDockActions): Tray {
   if (tray) return tray;
   tray = new Tray(loadTrayIcon());
   tray.setToolTip('Market Overlay');
@@ -65,6 +71,20 @@ export function createTray(getMainWindow: () => BrowserWindow | null): Tray {
             w?.webContents.send(IPC.EVENT_TRAY_ACTION, 'settings');
           },
         },
+        { type: 'separator' },
+        {
+          label: `Dock smaller (−10px)  [${state.settings.dockThickness}px]`,
+          accelerator: 'CommandOrControl+Alt+[',
+          enabled: state.settings.dockPosition !== 'floating',
+          click: () => dock?.dockSmaller(),
+        },
+        {
+          label: 'Dock larger (+10px)',
+          accelerator: 'CommandOrControl+Alt+]',
+          enabled: state.settings.dockPosition !== 'floating',
+          click: () => dock?.dockLarger(),
+        },
+        { label: 'Open log folder', click: () => dock?.openLogFolder() },
         { type: 'separator' },
         {
           label: 'Quit',

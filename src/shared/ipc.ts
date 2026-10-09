@@ -18,6 +18,8 @@ export const IPC = {
   APP_GET_LOGIN_ITEM: 'app:getLoginItem',
   APP_NOTIFY: 'app:notify',
   APP_GET_VERSION: 'app:getVersion',
+  APP_OPEN_LOG_FOLDER: 'app:openLogFolder',
+  DOCK_UI_LOG: 'dock:uiLog',
 
   STORE_GET: 'store:get',
   STORE_SET: 'store:set',
@@ -44,6 +46,7 @@ export const IPC = {
   EVENT_WATCHLIST_SWITCH: 'event:watchlistSwitch',
   EVENT_QUOTE_UPDATE: 'event:quoteUpdate',
   EVENT_STATE_RELOAD: 'event:stateReload',
+  EVENT_DOCK_CHANGED: 'event:dockChanged',
   EVENT_CRYPTO_STREAM_STATUS: 'event:cryptoStreamStatus',
 } as const;
 

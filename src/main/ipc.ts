@@ -1,6 +1,7 @@
 import {
   ipcMain,
   BrowserWindow,
+  shell,
   Notification,
   app,
   dialog,
@@ -24,6 +25,7 @@ import {
 } from './windowState';
 import { rebuildTrayMenu } from './tray';
 import { applyDock, isApplyingDock, type DockApplyResult } from './dock/workAreaReserve';
+import { dockLog, getDockLogDir } from './dock/dockLog';
 import { cryptoStream } from './market/CryptoStream';
 import { getNextOpenTime } from './market/marketHours';
 import {
@@ -96,11 +98,38 @@ export async function applyDockFromSettings(win?: BrowserWindow | null): Promise
     const result = await applyDock(target, displayBounds, position, thickness, reserve);
     if (seq !== dockApplySeq) return; // superseded while applying
     lastDockResult = result;
-    console.debug('[dock]', result.detail);
+    dockLog('applied', `${result.detail} bounds=${JSON.stringify(target.isDestroyed() ? null : target.getBounds())}`);
   };
   const next = dockApplyChain.then(run, run);
   dockApplyChain = next.catch(() => {});
   await next;
+}
+
+/**
+ * Single entry point for every thickness change (drag, slider, +/- buttons,
+ * numeric input, tray, keyboard shortcut, adopted native resize).
+ * Persists, applies, tells the renderer, logs with a source tag.
+ */
+export async function requestDockThickness(thickness: number, source: string): Promise<number> {
+  const before = persist.get('settings').dockThickness;
+  const t = clampThickness(Number(thickness));
+  dockLog('request', `source=${source} requested=${thickness} clamped=${t} previous=${before}`);
+  const settings = { ...persist.get('settings'), dockThickness: t, dockThicknessUserSet: true };
+  persist.set('settings', settings);
+  await applyDockFromSettings();
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    dockLog('request', `source=${source} done: window=${JSON.stringify(win.getBounds())}`);
+  }
+  send(IPC.EVENT_DOCK_CHANGED, { thickness: t, position: settings.dockPosition });
+  rebuildTrayMenu();
+  return t;
+}
+
+/** Step the thickness by `delta` px (tray / shortcuts / +- buttons). */
+export function stepDockThickness(delta: number, source: string): Promise<number> {
+  const cur = persist.get('settings').dockThickness ?? DEFAULT_DOCK_THICKNESS;
+  return requestDockThickness(cur + delta, source);
 }
 
 export function registerIpcHandlers(): void {
@@ -178,6 +207,8 @@ export function registerIpcHandlers(): void {
     }
   });
   ipcMain.handle(IPC.APP_GET_VERSION, () => app.getVersion());
+  ipcMain.handle(IPC.APP_OPEN_LOG_FOLDER, () => openDockLogFolder());
+  ipcMain.on?.(IPC.DOCK_UI_LOG, (_e, msg: string) => dockLog('ui', String(msg).slice(0, 500)));
   ipcMain.handle(IPC.APP_NOTIFY, (_e, payload: { title: string; body: string }) => {
     if (!Notification.isSupported()) return false;
     new Notification({
@@ -247,13 +278,9 @@ export function registerIpcHandlers(): void {
     await applyDockFromSettings();
     return settings;
   });
-  ipcMain.handle(IPC.DOCK_SET_THICKNESS, async (_e, thickness: number) => {
-    const t = clampThickness(Number(thickness));
-    const settings = { ...persist.get('settings'), dockThickness: t, dockThicknessUserSet: true };
-    persist.set('settings', settings);
-    await applyDockFromSettings();
-    return t;
-  });
+  ipcMain.handle(IPC.DOCK_SET_THICKNESS, async (_e, thickness: number, source?: string) =>
+    requestDockThickness(Number(thickness), `renderer:${source || 'ui'}`)
+  );
 
   ipcMain.handle(IPC.WATCHLIST_EXPORT, async (e, format: WatchlistExportFormat) => {
     const win = BrowserWindow.fromWebContents(e.sender);
@@ -306,4 +333,16 @@ export function registerIpcHandlers(): void {
     send(IPC.EVENT_STATE_RELOAD);
     return { ok: true, count: watchlists.length };
   });
+}
+
+/** Open <userData>/logs in Explorer/Finder (creates it if needed). */
+export async function openDockLogFolder(): Promise<string | null> {
+  const dir = getDockLogDir();
+  if (!dir) return null;
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    dockLog('ui', 'open log folder');
+    await shell.openPath(dir);
+  } catch { /* ignore */ }
+  return dir;
 }

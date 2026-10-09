@@ -20,6 +20,7 @@
  *    A generation counter cancels stale re-asserts from superseded resizes.
  */
 import type { BrowserWindow } from 'electron';
+import { dockLog } from './dockLog';
 import type { DockPosition } from '../../shared/types';
 import {
   boundsMatchDockThickness,
@@ -197,6 +198,7 @@ function loadApi(): AppBarApi | null {
     return api;
   } catch (err) {
     console.warn('[dock/win] koffi/SHAppBarMessage unavailable:', err);
+    dockLog('appbar', `koffi/SHAppBarMessage unavailable: ${String(err)}`);
     api = null;
     return null;
   }
@@ -273,6 +275,7 @@ function setPos(lib: AppBarApi, hwnd: number | bigint, edge: number, rc: WinRect
   // Shell may have adjusted q.rc (e.g. grown/moved). Reserve == window, always.
   const data = makeData(hwnd, edge, rc, lib.sizeofAppBarData);
   lib.SHAppBarMessage(ABM_SETPOS, data);
+  dockLog('appbar', `edge=${edge} QUERYPOS in=${JSON.stringify(rc)} shell-suggested=${JSON.stringify(q.rc)} SETPOS sent=${JSON.stringify(rc)} shell-returned=${JSON.stringify(data.rc)}`);
   try {
     lib.SHAppBarMessage(ABM_WINDOWPOSCHANGED, makeData(hwnd, edge, rc, lib.sizeofAppBarData));
   } catch { /* optional */ }
@@ -377,6 +380,7 @@ export function registerWithApi(
       if (gen !== applyGeneration || win.isDestroyed()) return;
       const cur = win.getBounds();
       if (!boundsMatchDockThickness(cur, position, thickness, displayBoundsDip)) {
+        log(`[dock] re-assert (timer 150ms): window drifted to ${JSON.stringify(cur)}, restoring ${JSON.stringify(intendedDip)}`);
         win.setBounds(intendedDip);
       }
       const again = readWindowPhysical(lib, hwnd, win, opts.toPhysical);
@@ -444,7 +448,7 @@ function scheduleVerify(
     const stable = samples.length >= 2 && samples.every((v) => v === samples[0]);
     if (!stable || Math.abs(observed - expected) <= 2) return;
     if (observed < expected) {
-      console.warn(`[dock] work area reserves less than the dock (${observed} < ${expected})`);
+      log(`[dock] work area reserves less than the dock (${observed} < ${expected})`);
       if (dpiCorrection > 1) {
         // A previous correction overshot — relax it and re-reserve.
         setWindowsAppBarDpiCorrection(dpiCorrection * (observed / expected));
@@ -455,7 +459,7 @@ function scheduleVerify(
     }
     const ratio = observed / expected;
     if (ratio < 1.1 || ratio > 4.5) {
-      console.warn(`[dock] reserve mismatch ${observed} vs ${expected} (ratio ${ratio.toFixed(3)}) — not auto-correcting`);
+      log(`[dock] reserve mismatch ${observed} vs ${expected} (ratio ${ratio.toFixed(3)}) — not auto-correcting`);
       return;
     }
     // Ratio is relative to what we last sent (which may already be corrected).

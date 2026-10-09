@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.8 — 2026-10-09
+
+### Fixes
+- **The dock can now be made narrower on Windows (right dock in particular).**
+  - On Windows, Electron gives a resizable frameless window a native ~5 px resize border inside every edge. On a right dock that border sits on the 6 px HTML drag handle at the inner (left) edge, so Windows started a *native* resize and the renderer never saw the pointer. When the native resize ended, the `resized` listener re-applied the *persisted* (old) thickness and the dock snapped back.
+  - Native resizes are now **adopted** as the new thickness, and the AppBar follows. Nothing is re-applied while a native resize is still in progress (`will-resize` … `resized`).
+  - Fixed a leak in the "applying" guard: overlapping applies (drag bursts, rapid clicks) could leave `isApplyingDock()` stuck at true.
+  - The drag handle is now 10 px, explicitly `-webkit-app-region: no-drag`, z-index 1000, with a visible grip and resize cursor.
+  - `setBounds` is checked against `getBounds`. On a mismatch it logs, unmaximizes if needed, drops the minimum size and retries once.
+- **More ways to resize:**
+  - Settings: numeric input plus −/+ buttons (10 px steps) next to the slider.
+  - Tray: “Dock smaller (−10px)” and “Dock larger (+10px)”.
+  - Keyboard: Ctrl+Alt+[ / Ctrl+Alt+] (in the app, and globally when the shortcut is free).
+  - All of these go through one main-process entry point (`requestDockThickness`), and the renderer is kept in sync.
+- **Diagnostics:** `dock.log` in `<userData>/logs`. On Windows that is `%APPDATA%\market-overlay\logs\dock.log`, and it rotates at 1 MB. It records every thickness request with its source, `setBounds` requested vs got, AppBar QUERYPOS/SETPOS rects, the reserve verify, re-apply/adopt decisions, native resize start/end, and drag start/end from the UI. Open it from the tray (“Open log folder”) or the Settings “Log” button.
+
 ## 1.1.7 — 2026-10-09
 
 ### Fixes

@@ -136,9 +136,51 @@ export function SettingsPanel() {
           onChange={(e) => update({ dockThickness: Number(e.target.value) })}
         />
       </label>
+      <div className="thickness-controls no-drag">
+        <button
+          type="button"
+          title="Smaller (Ctrl+Alt+[)"
+          disabled={settings.dockPosition === 'floating' || settings.dockThickness <= MIN_DOCK_THICKNESS}
+          onClick={() => update({ dockThickness: Math.max(MIN_DOCK_THICKNESS, settings.dockThickness - 10) })}
+        >
+          −
+        </button>
+        <input
+          type="number"
+          aria-label="Dock thickness in px"
+          min={MIN_DOCK_THICKNESS}
+          max={MAX_DOCK_THICKNESS}
+          step={10}
+          key={settings.dockThickness}
+          defaultValue={settings.dockThickness}
+          disabled={settings.dockPosition === 'floating'}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          }}
+          onBlur={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v) && v !== settings.dockThickness) {
+              update({ dockThickness: Math.min(MAX_DOCK_THICKNESS, Math.max(MIN_DOCK_THICKNESS, Math.round(v))) });
+            }
+          }}
+        />
+        <span>px</span>
+        <button
+          type="button"
+          title="Larger (Ctrl+Alt+])"
+          disabled={settings.dockPosition === 'floating' || settings.dockThickness >= MAX_DOCK_THICKNESS}
+          onClick={() => update({ dockThickness: Math.min(MAX_DOCK_THICKNESS, settings.dockThickness + 10) })}
+        >
+          +
+        </button>
+        <button type="button" title="Open folder with dock.log" onClick={() => void window.marketOverlay.openLogFolder?.()}>
+          Log
+        </button>
+      </div>
       <p className="hint">
         Width when docked left/right, height when top/bottom. Drag the inner edge of the
-        docked window to resize. Below {COMPACT_DOCK_THRESHOLD}px only ticker + price are shown.
+        docked window to resize, use −/+ or type a value, tray “Dock smaller/larger”, or
+        Ctrl+Alt+[ / Ctrl+Alt+]. Below {COMPACT_DOCK_THRESHOLD}px only ticker + price are shown.
         Disabled while floating.
       </p>
 
