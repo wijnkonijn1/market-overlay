@@ -59,6 +59,22 @@ html, body, #root { margin: 0; height: 100%; background: transparent; color: var
 .row:hover { background: rgba(255,255,255,0.04); }
 .sym { font-weight: 600; font-size: 13px; }
 .name { color: var(--muted); font-size: 10px; }
+/* Extended hours (v1.2.0): PRE / AH tag next to the ticker, AH line in wide rows. */
+.sym-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ext-tag {
+  flex: none; font-size: 8px; font-weight: 700; letter-spacing: 0.03em; line-height: 1;
+  padding: 2px 3px; border-radius: 3px; border: 1px solid currentColor; opacity: 0.9;
+}
+.ext-tag.pre { color: #f5b942; }
+.ext-tag.post { color: #8b9cf7; }
+/* Narrow docks: the ticker keeps priority, the tag shrinks to a colored dot. */
+.row-medium .sym-line, .row-compact .sym-line { gap: 3px; }
+.row-medium .ext-tag, .row-compact .ext-tag {
+  font-size: 0; width: 5px; height: 5px; padding: 0; border: 0; border-radius: 50%;
+  background: currentColor;
+}
+.ext-line { font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ext-line.up { color: var(--up); } .ext-line.down { color: var(--down); }
 .price { font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; }
 .chg { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
 .chg.up { color: var(--up); } .chg.down { color: var(--down); }

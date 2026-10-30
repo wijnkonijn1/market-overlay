@@ -2,7 +2,7 @@
  * Provider stack: yahoo-finance2 → HTTP → CoinGecko (crypto only).
  */
 import type { SearchResult, Quote, SparklineData, Timeframe, MarketState } from '../../shared/types';
-import { isCryptoSymbol } from '../../shared/cryptoMap';
+import { isCryptoSymbol, normalizeSymbol } from '../../shared/cryptoMap';
 import { coinGeckoQuote } from './CoinGeckoFallback';
 import { YahooFinance2Provider } from './YahooFinance2Provider';
 import { YahooHttpProvider } from './YahooHttpProvider';
@@ -115,9 +115,23 @@ export class CompositeProvider implements MarketDataProvider {
       quotes = await this.http.getQuotes(symbols);
       this.lastBackend = 'yahoo-http';
       debugLog(this.debug, 'quotes', `served by yahoo-http (${quotes.length})`);
+    } else {
+      // Partial batch from yahoo-finance2: fetch only the missing ones over HTTP
+      // instead of leaving those rows empty until the next refresh.
+      const have = new Set(quotes.map((q) => q.symbol));
+      const missing = symbols.filter((s) => !have.has(s) && !have.has(normalizeSymbol(s)));
+      if (missing.length) {
+        try {
+          const extra = await this.http.getQuotes(missing);
+          quotes = quotes.concat(extra);
+          debugLog(this.debug, 'quotes', `filled ${extra.length}/${missing.length} missing via yahoo-http`);
+        } catch (err) {
+          debugLog(this.debug, 'quotes missing-fill failed', err);
+        }
+      }
     }
     const got = new Set(quotes.map((q) => q.symbol));
-    for (const sym of symbols.filter((s) => !got.has(s) && isCryptoSymbol(s))) {
+    for (const sym of symbols.filter((s) => !got.has(s) && !got.has(normalizeSymbol(s)) && isCryptoSymbol(s))) {
       const cg = await coinGeckoQuote(sym);
       if (cg) {
         quotes.push(cg);

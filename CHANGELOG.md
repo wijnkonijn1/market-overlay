@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.0 — 2026-10-26
+
+### New
+- **Pre-market and after-hours prices for US stocks.** Before this, a US ticker only moved at the 15:30 (Brussels) open.
+  - **Pre-market (04:00–09:30 ET):** the row shows the latest pre-market price, and the change/% is measured against the last close (the move since the close). A yellow **PRE** tag sits next to the ticker.
+  - **After hours (16:00–20:00 ET, and overnight until the next pre-market):** the main price stays on the regular close with the day's change. A blue **AH** tag is shown, and wide rows add an "After hours $… ±…%" line.
+  - Hovering a row shows the extended price, its change, the time and the last close. The detail view shows the same.
+  - Narrow docks (below 300px) show the tag as a small coloured dot so the ticker keeps its space.
+  - Works with both data sources: yahoo-finance2 (`preMarketPrice`/`postMarketPrice`) and the HTTP fallback (`includePrePost` bars). Extended trades older than the last regular trade are ignored, so stale values never show during the regular session.
+
+### Fixes
+- **Wrong % change from the HTTP fallback.** It used a 5-day range, so `chartPreviousClose` was the close from 5 trading days earlier and the "daily" % was really a 5-day change. It now uses `range=1d` with the prior session's close.
+- **Overnight status.** Yahoo's `PREPRE`/`POSTPOST` (20:00–04:00 ET) showed as "Pre-market"/"After hours". It now shows "Market closed" with the next open.
+- **Partial batches.** If yahoo-finance2 returns only some symbols, the missing ones are now fetched over HTTP right away, instead of showing "—" until the next refresh.
+
+### Performance
+- **No more unused chart downloads.** Each refresh (every 30 s by default) also fetched 1D history for up to 20 tickers, but no chart is rendered anywhere. Those requests are gone. That cuts Yahoo traffic by up to about 20 requests per refresh and lowers the chance of 429 rate limiting slowing the quotes.
+
 ## 1.1.9 — 2026-10-09
 
 ### New

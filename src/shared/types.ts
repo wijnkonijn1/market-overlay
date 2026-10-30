@@ -49,6 +49,22 @@ export interface Quote {
   exchange?: string;
   nextOpenLabel?: string;
   nextOpenAt?: number;
+  /**
+   * Latest extended-hours trade (US pre-market / after-hours), when fresher than
+   * the last regular trade. For PRE, `price`/`change` above already show the
+   * pre-market move; for POST they keep the regular close and this is extra.
+   */
+  extended?: ExtendedQuote;
+}
+
+export interface ExtendedQuote {
+  session: 'PRE' | 'POST';
+  price: number;
+  /** Change vs. `basePrice` (the last regular-session close). */
+  change: number;
+  changePercent: number;
+  time?: number;
+  basePrice: number;
 }
 
 export interface HistoricalPoint {

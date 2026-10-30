@@ -1,4 +1,4 @@
-import type { Quote, SparklineData } from '../../shared/types';
+import type { Quote } from '../../shared/types';
 import { useAppStore } from '../store/appStore';
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -22,17 +22,9 @@ export async function refreshQuotes(force = false): Promise<void> {
   try {
     const quotes = (await api().quotes(symbols)) as Quote[];
     store.setQuotes(quotes, { unavailable: quotes.length === 0 && symbols.length > 0 });
-    if (store.settings.showCharts) {
-      const tf = store.settings.chartTimeframe;
-      await Promise.all(
-        symbols.slice(0, 20).map(async (sym) => {
-          try {
-            const hist = (await api().history(sym, tf)) as SparklineData | null;
-            if (hist) store.setSparkline(hist);
-          } catch { /* ignore */ }
-        })
-      );
-    }
+    // History/sparklines are not rendered anywhere yet; fetching up to 20 charts
+    // on every refresh only cost bandwidth and Yahoo rate-limit budget (429s
+    // then slowed the quotes themselves). Fetch on demand once a chart exists.
   } catch (err) {
     console.warn('refresh failed', err);
     store.setQuotes([], { unavailable: true });

@@ -12,7 +12,15 @@ import {
 } from './utils/format';
 import { refreshQuotes, scheduleRefresh } from './services/marketService';
 import { dockRowDensity } from '../shared/dockBounds';
-import type { TickerItem } from '../shared/types';
+import type { TickerItem, Quote } from '../shared/types';
+
+/** Row tooltip for a quote with an extended-hours trade. */
+function extendedTooltip(t: TickerItem, q: Quote): string {
+  const x = q.extended!;
+  const label = x.session === 'PRE' ? 'Pre-market' : 'After hours';
+  const at = x.time ? ` (${new Date(x.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : '';
+  return `${label}${at}: ${formatTickerPrice(t, x.price, q.currency)} ${formatTickerChange(t, x.price, x.change, x.changePercent)} · close ${formatTickerPrice(t, x.basePrice, q.currency)}`;
+}
 
 export function App() {
   // Version comes from the main process (app.getVersion() = package.json), never hardcoded.
@@ -230,20 +238,35 @@ export function App() {
         {active?.tickers.map((t) => {
           const q = quotes[t.symbol];
           const up = (q?.change ?? 0) >= 0;
+          const ext = q?.extended;
+          const extTitle = q && ext ? extendedTooltip(t, q) : undefined;
           return (
             <div
               key={t.symbol}
               className={rowClass}
               onClick={() => setSelectedSymbol(t.symbol)}
-              title="Right-click: decimals / details / remove"
+              title={extTitle ? `${extTitle}\nRight-click: decimals / details / remove` : 'Right-click: decimals / details / remove'}
               onContextMenu={(e) => {
                 e.preventDefault();
                 void onRowContextMenu(t, q?.price ?? 0);
               }}
             >
               <div className="sym-block">
-                <div className="sym">{t.displaySymbol}</div>
+                <div className="sym-line">
+                  <div className="sym">{t.displaySymbol}</div>
+                  {ext && (
+                    <span className={`ext-tag ${ext.session.toLowerCase()}`} title={extTitle}>
+                      {ext.session === 'PRE' ? 'PRE' : 'AH'}
+                    </span>
+                  )}
+                </div>
                 {showName && <div className="name">{q?.name || t.name || t.symbol}</div>}
+                {showName && ext?.session === 'POST' && (
+                  <div className={`ext-line ${ext.change >= 0 ? 'up' : 'down'}`}>
+                    After hours {formatTickerPrice(t, ext.price, q?.currency)}{' '}
+                    {formatPercentChange(ext.changePercent)}
+                  </div>
+                )}
               </div>
               <div className="price">{q ? formatTickerPrice(t, q.price, q.currency) : '—'}</div>
               {showChange && (
@@ -312,6 +335,21 @@ export function App() {
                   quotes[selectedSymbol].changePercent
                 )}
               </div>
+              {quotes[selectedSymbol].extended && (() => {
+                const x = quotes[selectedSymbol].extended!;
+                const tk = selectedTicker ?? { symbol: selectedSymbol };
+                const cur = quotes[selectedSymbol].currency;
+                return (
+                  <>
+                    <div>
+                      {x.session === 'PRE' ? 'Pre-market' : 'After hours'}:{' '}
+                      {formatTickerPrice(tk, x.price, cur)} ({formatTickerChange(tk, x.price, x.change, x.changePercent)})
+                      {x.time ? ` · ${new Date(x.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                    </div>
+                    <div>Last close: {formatTickerPrice(tk, x.basePrice, cur)}</div>
+                  </>
+                );
+              })()}
               <div>State: {quotes[selectedSymbol].marketState}</div>
               {quotes[selectedSymbol].nextOpenLabel && (
                 <div>Next open: {quotes[selectedSymbol].nextOpenLabel}</div>

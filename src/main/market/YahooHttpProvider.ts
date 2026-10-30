@@ -6,6 +6,7 @@ import type {
 } from '../../shared/types';
 import { normalizeSymbol, isCryptoSymbol, displaySymbol } from '../../shared/cryptoMap';
 import { getMarketStateForSymbol, enrichQuoteWithNextOpen } from './marketHours';
+import { applyExtendedHours, type ExtendedInput } from '../../shared/extendedHours';
 import { coinGeckoQuote } from './CoinGeckoFallback';
 import type { MarketDataProvider } from './types';
 
@@ -98,11 +99,13 @@ export class YahooHttpProvider implements MarketDataProvider {
   async getQuote(symbol: string): Promise<Quote | null> {
     const sym = normalizeSymbol(symbol);
     try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
+      // range=1d → chartPreviousClose is the prior session's close (range=5d gave
+      // a 5-day change). includePrePost adds US pre-market / after-hours bars.
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=5m&range=1d&includePrePost=true`;
       const data = await this.withBackoff(() => fetchJson(url));
       const result = data?.chart?.result?.[0];
       if (!result?.meta) throw new Error('empty chart');
-      const quote = this.mapFromChartMeta(result.meta, sym);
+      const quote = mapChartResult(result, sym);
       return quote ? enrichQuoteWithNextOpen(quote) : null;
     } catch (err) {
       console.warn(`[YahooHttpProvider] quote failed for ${sym}:`, err);
@@ -147,41 +150,66 @@ export class YahooHttpProvider implements MarketDataProvider {
     if (quote?.marketState) return quote.marketState;
     return getMarketStateForSymbol(symbol, quote?.exchange);
   }
+}
 
-  private mapFromChartMeta(meta: any, symbol: string): Quote | null {
-    const price = meta.regularMarketPrice ?? meta.postMarketPrice ?? meta.previousClose;
-    if (price == null || Number.isNaN(Number(price))) return null;
-    const prev = meta.chartPreviousClose ?? meta.previousClose ?? meta.regularMarketPreviousClose;
-    const change = prev != null ? Number(price) - Number(prev) : 0;
-    const changePercent = prev ? (change / Number(prev)) * 100 : 0;
-    const type = mapAssetType(meta.instrumentType, symbol);
-    const exchange = meta.fullExchangeName || meta.exchangeName;
-    const delayed = type !== 'crypto';
-    return {
-      symbol: meta.symbol || symbol,
-      name: meta.shortName || meta.longName || displaySymbol(symbol),
-      price: Number(price),
-      change,
-      changePercent,
-      currency: meta.currency || 'USD',
-      previousClose: prev != null ? Number(prev) : undefined,
-      dayHigh: meta.regularMarketDayHigh != null ? Number(meta.regularMarketDayHigh) : undefined,
-      dayLow: meta.regularMarketDayLow != null ? Number(meta.regularMarketDayLow) : undefined,
-      volume: meta.regularMarketVolume != null ? Number(meta.regularMarketVolume) : undefined,
-      marketCap: meta.marketCap != null ? Number(meta.marketCap) : undefined,
-      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh != null ? Number(meta.fiftyTwoWeekHigh) : undefined,
-      fiftyTwoWeekLow: meta.fiftyTwoWeekLow != null ? Number(meta.fiftyTwoWeekLow) : undefined,
-      volume24h: type === 'crypto' && meta.regularMarketVolume != null ? Number(meta.regularMarketVolume) : undefined,
-      high24h: type === 'crypto' && meta.regularMarketDayHigh != null ? Number(meta.regularMarketDayHigh) : undefined,
-      low24h: type === 'crypto' && meta.regularMarketDayLow != null ? Number(meta.regularMarketDayLow) : undefined,
-      marketState: getMarketStateForSymbol(symbol, exchange, meta.marketState),
-      delayed,
-      delayMinutes: delayed ? 15 : undefined,
-      timestamp: Date.now(),
-      type,
-      exchange,
-    };
-  }
+/** Last non-null bar and which extended session (if any) it falls in. */
+export function extendedFromChart(result: any): ExtendedInput {
+  const meta = result?.meta ?? {};
+  const ts: number[] = result?.timestamp ?? [];
+  const closes: Array<number | null> = result?.indicators?.quote?.[0]?.close ?? [];
+  const regularTime = meta.regularMarketTime;
+  let i = ts.length - 1;
+  while (i >= 0 && (closes[i] == null || Number.isNaN(Number(closes[i])))) i--;
+  if (i < 0) return { regularTime };
+  const t = ts[i];
+  const price = Number(closes[i]);
+  const tp = meta.currentTradingPeriod;
+  const inWin = (w: any) => w && t >= w.start && t < w.end;
+  if (inWin(tp?.pre)) return { pre: { price, time: t }, regularTime };
+  if (inWin(tp?.post)) return { post: { price, time: t }, regularTime };
+  return { regularTime };
+}
+
+export function mapChartResult(result: any, symbol: string): Quote | null {
+  const meta = result?.meta;
+  if (!meta) return null;
+  const q = mapFromChartMeta(meta, symbol);
+  return q ? applyExtendedHours(q, extendedFromChart(result)) : null;
+}
+
+function mapFromChartMeta(meta: any, symbol: string): Quote | null {
+  const price = meta.regularMarketPrice ?? meta.postMarketPrice ?? meta.previousClose;
+  if (price == null || Number.isNaN(Number(price))) return null;
+  const prev = meta.previousClose ?? meta.chartPreviousClose ?? meta.regularMarketPreviousClose;
+  const change = prev != null ? Number(price) - Number(prev) : 0;
+  const changePercent = prev ? (change / Number(prev)) * 100 : 0;
+  const type = mapAssetType(meta.instrumentType, symbol);
+  const exchange = meta.fullExchangeName || meta.exchangeName;
+  const delayed = type !== 'crypto';
+  return {
+    symbol: meta.symbol || symbol,
+    name: meta.shortName || meta.longName || displaySymbol(symbol),
+    price: Number(price),
+    change,
+    changePercent,
+    currency: meta.currency || 'USD',
+    previousClose: prev != null ? Number(prev) : undefined,
+    dayHigh: meta.regularMarketDayHigh != null ? Number(meta.regularMarketDayHigh) : undefined,
+    dayLow: meta.regularMarketDayLow != null ? Number(meta.regularMarketDayLow) : undefined,
+    volume: meta.regularMarketVolume != null ? Number(meta.regularMarketVolume) : undefined,
+    marketCap: meta.marketCap != null ? Number(meta.marketCap) : undefined,
+    fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh != null ? Number(meta.fiftyTwoWeekHigh) : undefined,
+    fiftyTwoWeekLow: meta.fiftyTwoWeekLow != null ? Number(meta.fiftyTwoWeekLow) : undefined,
+    volume24h: type === 'crypto' && meta.regularMarketVolume != null ? Number(meta.regularMarketVolume) : undefined,
+    high24h: type === 'crypto' && meta.regularMarketDayHigh != null ? Number(meta.regularMarketDayHigh) : undefined,
+    low24h: type === 'crypto' && meta.regularMarketDayLow != null ? Number(meta.regularMarketDayLow) : undefined,
+    marketState: getMarketStateForSymbol(symbol, exchange, meta.marketState),
+    delayed,
+    delayMinutes: delayed ? 15 : undefined,
+    timestamp: Date.now(),
+    type,
+    exchange,
+  };
 }
 
 export const yahooHttpProvider = new YahooHttpProvider();

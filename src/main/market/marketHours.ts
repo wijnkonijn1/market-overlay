@@ -188,8 +188,11 @@ export function getMarketStateForSymbol(
   if (quoteMarketState) {
     const s = quoteMarketState.toUpperCase();
     if (s === 'REGULAR') return 'REGULAR';
-    if (s === 'PRE' || s === 'PREPRE') return 'PRE';
-    if (s === 'POST' || s === 'POSTPOST') return 'POST';
+    if (s === 'PRE') return 'PRE';
+    if (s === 'POST') return 'POST';
+    // Yahoo's PREPRE / POSTPOST are the overnight gap (20:00–04:00 ET): no
+    // trading, so show "closed" with the next open rather than "pre-market".
+    if (s === 'PREPRE' || s === 'POSTPOST') return 'CLOSED';
     if (s === 'CLOSED') return 'CLOSED';
   }
 

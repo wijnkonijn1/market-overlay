@@ -6,6 +6,7 @@ import type {
 } from '../../shared/types';
 import { normalizeSymbol, isCryptoSymbol, displaySymbol } from '../../shared/cryptoMap';
 import { getMarketStateForSymbol, enrichQuoteWithNextOpen } from './marketHours';
+import { applyExtendedHours } from '../../shared/extendedHours';
 import type { MarketDataProvider } from './types';
 import { classifyYahooFailure } from './types';
 
@@ -52,7 +53,7 @@ function rethrowAuth(err: unknown): never {
   throw err instanceof Error ? err : new Error(String(err));
 }
 
-function mapQuoteResult(q: any, symbol: string): Quote | null {
+export function mapQuoteResult(q: any, symbol: string): Quote | null {
   if (!q) return null;
   const price = q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? null;
   if (price == null || Number.isNaN(Number(price))) return null;
@@ -72,7 +73,7 @@ function mapQuoteResult(q: any, symbol: string): Quote | null {
   const type = mapAssetType(q.quoteType || q.typeDisp, symbol);
   const exchange = q.fullExchangeName || q.exchange;
   const delayed = type !== 'crypto';
-  return {
+  const base: Quote = {
     symbol: q.symbol || symbol,
     name: q.shortName || q.longName || q.displayName || displaySymbol(symbol),
     price: Number(price),
@@ -96,6 +97,11 @@ function mapQuoteResult(q: any, symbol: string): Quote | null {
     type,
     exchange,
   };
+  return applyExtendedHours(base, {
+    pre: { price: q.preMarketPrice, time: q.preMarketTime },
+    post: { price: q.postMarketPrice, time: q.postMarketTime },
+    regularTime: q.regularMarketTime,
+  });
 }
 
 export class YahooFinance2Provider implements MarketDataProvider {
