@@ -3,8 +3,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const root = join(__dirname, '..');
-const app = readFileSync(join(root, 'src/renderer/App.tsx'), 'utf8');
-const css = readFileSync(join(root, 'src/renderer/styles/app.css'), 'utf8');
+const app = readFileSync(join(root, 'src/renderer/App.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const css = readFileSync(join(root, 'src/renderer/styles/app.css'), 'utf8').replace(/\r\n/g, '\n');
 
 describe('medium density rows fit at 150px (v1.1.9)', () => {
   it('medium rows render % change only, compact hides change', () => {

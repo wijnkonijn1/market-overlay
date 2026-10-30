@@ -5,9 +5,9 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-const css = fs.readFileSync(path.join(__dirname, '../src/renderer/styles/app.css'), 'utf8');
-const handleTsx = fs.readFileSync(path.join(__dirname, '../src/renderer/components/DockResizeHandle.tsx'), 'utf8');
-const settingsTsx = fs.readFileSync(path.join(__dirname, '../src/renderer/components/SettingsPanel.tsx'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '../src/renderer/styles/app.css'), 'utf8').replace(/\r\n/g, '\n');
+const handleTsx = fs.readFileSync(path.join(__dirname, '../src/renderer/components/DockResizeHandle.tsx'), 'utf8').replace(/\r\n/g, '\n');
+const settingsTsx = fs.readFileSync(path.join(__dirname, '../src/renderer/components/SettingsPanel.tsx'), 'utf8').replace(/\r\n/g, '\n');
 
 function block(selector: string): string {
   const i = css.indexOf(selector + ' {');

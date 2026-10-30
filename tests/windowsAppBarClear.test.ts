@@ -10,7 +10,8 @@ import {
   _resetWindowsAppBarStateForTests,
 } from '../src/main/dock/windowsAppBar';
 
-describe('windowsAppBar clear paths (non-Windows)', () => {
+// On Windows the real AppBar API loads, so these non-Windows expectations don't apply.
+describe.skipIf(process.platform === 'win32')('windowsAppBar clear paths (non-Windows)', () => {
   beforeEach(() => {
     _resetWindowsAppBarStateForTests();
   });
